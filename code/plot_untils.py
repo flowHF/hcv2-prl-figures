@@ -2,11 +2,12 @@ import pandas as pd
 import numpy as np
 from scipy.interpolate import PchipInterpolator
 from scipy.interpolate import InterpolatedUnivariateSpline
-import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 import ROOT
 import array
 import sys
+import os
+import subprocess
 from ROOT import TFile, gROOT, TGaxis, gStyle
 
 
@@ -539,20 +540,8 @@ def preprocess_data(data_file_path, get_source_data=False, compine_syst_stat=Tru
         data_file_path = list(data_file_path)
     if get_source_data:
         df = read_txt(data_file_path[0], header=header)
-        pt = df['PT']
-        # v2 = df.iloc[:, 1]
-        v2 = df.iloc[:, v2_index]
-        syst_up = df[data_columns[4]]
-        syst_low = df[data_columns[5]]
-        stat_up = df[data_columns[2]]
-        stat_low = df[data_columns[3]]
-        comparison_stat = stat_low.equals(-stat_up)
-        comparison_syst = syst_low.equals(-syst_up)
-        if not comparison_stat:
-            print('\033[93mWARNING: comparison of stat up and low is not True, check it!.\033[0m')
-        elif not comparison_syst:
-            print('\033[93mWARNING: comparison of syst up and low is not True, check it!.\033[0m')
-        return pt, v2, stat_low, stat_up, syst_low, syst_up
+        # print(df)
+        return df
     df1 = read_txt(data_file_path[0], header=header)
     df2 = read_txt(data_file_path[1], header=header)
     # print(df1.columns.tolist())
@@ -779,8 +768,8 @@ def fill_hist(data, hist='', columns=["PT [GeV/c]", "v2", "Stat +"]):
 def fill_graph(data, columns=["PT [GeV/c]", "v2", "Total Error"], compine_syst_stat=True):
     # print(columns)
     n_points = len(data[columns[0]])
-    graph = ROOT.TGraphErrors(n_points)
-    # graph = ROOT.TGraphAsymmErrors(n_points)
+    # graph = ROOT.TGraphErrors(n_points)
+    graph = ROOT.TGraphAsymmErrors(n_points)
     
     # Fill graph
     for i in range(n_points):
@@ -803,7 +792,8 @@ def fill_graph(data, columns=["PT [GeV/c]", "v2", "Total Error"], compine_syst_s
             if dx < 0.4:
                 dx = 0.25
                 dx = dx*0.8
-        graph.SetPointError(i, dx, yerr)  # Set error (dx, dy), dx=0 indicates no x-axis error
+        # graph.SetPointError(i, dx, yerr)  # Set error (dx, dy), dx=0 indicates no x-axis error
+        graph.SetPointError(i, dx, dx, yerr, yerr)  # Set error (dx, dy), dx=0 indicates no x-axis error
 
     # Set graph style
     graph.SetMarkerStyle(20)  # Set marker style
@@ -1105,7 +1095,10 @@ def model_chi2(data_asymm, h_model, ndf=0):
             chi2 += (residual ** 2) / (data_asymm.GetBinError(ibin) ** 2)
     else:
         x_vals = data_asymm.GetX()
+        x_vals = list(x_vals)
         y_vals = data_asymm.GetY()
+        y_vals = list(y_vals)
+        print(x_vals, y_vals)
         model_y_vals = []
         y_errs = []
         chi2_list = []
@@ -1124,8 +1117,8 @@ def model_chi2(data_asymm, h_model, ndf=0):
             model_y_vals.append(y_model)
             tolerance = 1e-6
             # Check pt matching
-            # if abs(x_data - x_model) > tolerance:
-            #     raise ValueError(f"pt mismatch at point {i}: data pt={x_data}, model pt={x_model}")
+            if abs(x_data - x_model) > tolerance:
+                raise ValueError(f"pt mismatch at point {i}: data pt={x_data}, model pt={x_model}")
             # Calculate residual
             residual = y_data - y_model
             residuals.append(residual)
@@ -1160,4 +1153,144 @@ def model_chi2(data_asymm, h_model, ndf=0):
         print(residuals)
         print('len(residuals):', len(residuals))
     return chi2, ndf, chi2/ndf
+
+
+def compute_ratio_graph(graph_num, graph_den):
+    """
+    Calculate the ratio of two TGraphAsymmErrors (graph_num / graph_den) and return a TGraphAsymmErrors of the ratio.
+    
+    Parameters:
+        graph_num: Numerator TGraphAsymmErrors (contains y-direction errors)
+        graph_den: Denominator TGraphAsymmErrors (assumed to have no errors, only its y-values are used)
+    
+    Returns:
+        ratio_graph: TGraphAsymmErrors of the ratio, including propagated errors
+    """
+    # Check input types and convert TH1F to TGraphAsymmErrors if necessary
+    if isinstance(graph_num, ROOT.TH1F):
+        graph_num = ROOT.TGraphAsymmErrors(graph_num)
+    if isinstance(graph_den, ROOT.TH1F):
+        graph_den = ROOT.TGraphAsymmErrors(graph_den)
+    if not (isinstance(graph_num, ROOT.TGraphAsymmErrors) and 
+            isinstance(graph_den, ROOT.TGraphAsymmErrors)):
+        raise TypeError("Inputs must be of type TGraphAsymmErrors")
+    
+    n_points = graph_num.GetN()
+    if n_points != graph_den.GetN():
+        raise ValueError(f"Mismatch in number of points: {n_points} vs {graph_den.GetN()}")
+    
+    # Extract x-axis data (access via pointer instead of passing array)
+    x = []
+    x_err_low = []  # x left error
+    x_err_high = [] # x right error
+    for i in range(n_points):
+        x.append(graph_num.GetX()[i])  # Directly get i-th x value
+        x_err_low.append(graph_num.GetErrorXlow(i))
+        x_err_high.append(graph_num.GetErrorXhigh(i))
+    
+    # Extract y-values and errors (numerator and denominator)
+    y_num = [graph_num.GetY()[i] for i in range(n_points)]  # Numerator y-values
+    y_den = [graph_den.GetY()[i] for i in range(n_points)]  # Denominator y-values
+    
+    # Y-direction errors of the numerator (lower and upper errors)
+    y_num_err_low = [graph_num.GetErrorYlow(i) for i in range(n_points)]
+    y_num_err_high = [graph_num.GetErrorYhigh(i) for i in range(n_points)]
+    
+    # Calculate ratio and error propagation
+    ratio_y = []
+    ratio_err_low = []
+    ratio_err_high = []
+    for i in range(n_points):
+        if y_den[i] == 0:
+            raise ZeroDivisionError(f"Denominator value is zero at point {i}, cannot compute ratio")
+        
+        # Ratio = numerator y-value / denominator y-value
+        ratio = y_num[i] / y_den[i]
+        ratio_y.append(ratio)
+        
+        # Error propagation (denominator has no errors, numerator errors scaled proportionally)
+        ratio_err_low.append(y_num_err_low[i] / y_den[i])  # Lower error
+        ratio_err_high.append(y_num_err_high[i] / y_den[i])  # Upper error
+    
+    # Convert to numpy arrays (required for TGraphAsymmErrors constructor)
+    x_np = np.array(x, dtype=float)
+    ratio_y_np = np.array(ratio_y, dtype=float)
+    x_err_low_np = np.array(x_err_low, dtype=float)
+    x_err_high_np = np.array(x_err_high, dtype=float)
+    ratio_err_low_np = np.array(ratio_err_low, dtype=float)
+    ratio_err_high_np = np.array(ratio_err_high, dtype=float)
+    
+    # Create TGraphAsymmErrors for the ratio
+    ratio_graph = ROOT.TGraphAsymmErrors(
+        n_points,
+        x_np, ratio_y_np,
+        x_err_low_np, x_err_high_np,  # x-direction errors
+        ratio_err_low_np, ratio_err_high_np  # y-direction errors
+    )
+    
+    return ratio_graph
+
+
+
+def scale_x_errors(graph, scale_factor=0.8, target_graph='', target_bins=[]):
+    """
+    Scale the x errors (both low and high errors) of a TGraphAsymmErrors object by a specified factor.
+    
+    Parameters:
+        graph: TGraphAsymmErrors object whose x errors will be scaled
+        scale_factor: Scaling factor (default is 0.8)
+        target_graph: Optional TGraphAsymmErrors object. If provided, its x errors will be used 
+                      as the base for scaling instead of the original errors of 'graph'
+    """
+    n_points = graph.GetN()  # Get the number of data points
+    
+    # Process each data point in a loop
+    for i in range(n_points):
+        # Get original x and y values (these remain unchanged)
+        x = graph.GetX()[i]
+        y = graph.GetY()[i]
+        
+        # Get original x errors (low and high)
+        x_err_low = graph.GetErrorXlow(i)  # x low error (x - x_err_low)
+        x_err_high = graph.GetErrorXhigh(i)  # x high error (x + x_err_high)
+        
+        # If target_graph is provided, use its x errors as the base
+        if target_graph:
+            x_err_low = target_graph.GetErrorXlow(i)  # Get x low error from target graph
+            x_err_high = target_graph.GetErrorXhigh(i)  # Get x high error from target graph
+            # print('Scaling x errors according to target graph', x_err_high)
+        elif target_bins:
+            x_err_low = (target_bins[i+1] - target_bins[i])/2
+            x_err_high = x_err_low
+            # print(x_err_low, x_err_high)
+
+        # Get original y errors (these remain unchanged)
+        y_err_low = graph.GetErrorYlow(i)
+        y_err_high = graph.GetErrorYhigh(i)
+
+        # Scale the x errors by the specified factor
+        new_x_err_low = x_err_low * scale_factor
+        new_x_err_high = x_err_high * scale_factor
+        
+        # Update the data point (keep x and y values unchanged, only modify x errors)
+        graph.SetPoint(i, x, y)
+        graph.SetPointError(i, new_x_err_low, new_x_err_high, y_err_low, y_err_high)
+    
+    return graph
+
+
+def pdf2eps_imagemagick(pdf_paths, target_format='png'):
+    """use ImageMagick convert PDF to PNG / EPS"""
+    for pdf in pdf_paths:
+        target_path = os.path.splitext(pdf)[0] + f'.{target_format}'
+        try:
+            subprocess.run([
+                'convert', '-trim', 
+                '-density', '300', 
+                pdf, 
+                target_path
+            ], check=True)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            # raise Exception(f"{pdf} ImageMagick convert failed")
+            print(f"{pdf} ImageMagick convert failed")
 
