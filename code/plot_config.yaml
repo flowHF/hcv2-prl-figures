@@ -1,0 +1,125 @@
+# plot_config.yaml
+general:
+  out_dir: "../output"
+  debug: false
+  canvas_size:
+    compare_allD: [800, 800]
+    compare_model: [1200, 600]
+    ncq: [1600, 800]
+    performance: [1600, 1600]
+
+colors:
+  lc: {default: "kRed+1", black: "kBlack"}
+  d0: {default: "kAzure+4", black: "kBlack"}
+  pi: "kGray+2"
+  ds: "kOrange+2"
+  ks: "kBlue+1"
+  lambda: "kOrange+2"
+  dplus: "kGreen+2"
+  jpsi: "kViolet+3"
+
+colors_lc: {"langevin":ROOT.kRed+2, "htl":ROOT.kRed+1, "latQCD":ROOT.kOrange+1, "lbt":ROOT.kP10Brown,
+                "tamu":ROOT.kRed+1, "catania":ROOT.kMagenta, "epos4hq":ROOT.TColor.GetColor("#8B0000")}
+colors_d0: {"langevin":ROOT.kBlue+2, "htl":ROOT.kCyan+2, "latQCD":ROOT.kP10Green, "lbt":ROOT.kP10Violet,
+                "tamu":ROOT.kAzure+4, "catania":ROOT.kAzure+1, "epos4hq":ROOT.TColor.GetColor("#4169E1")}
+    
+model:
+  colors:
+    langevin: {base: "kRed+1", alpha: 0.6}
+    htl: {base: "kGreen+3", alpha: 0.9}
+    latQCD: {base: "kSpring+5", alpha: 0.9}
+    lbt: {base: "kOrange+1", alpha: 0.9}
+    tamu: {base: "kAzure+4", alpha: 0.6}
+    catania: {base: "kBlue+1", alpha: 0.1}
+    epos4hq: {base: "kP8Pink", alpha: 0.6}
+  styles:
+    langevin: 2
+    htl: 6
+    latQCD: 7
+    lbt: 3
+    epos4hq: 9
+
+data_paths:
+  d0: "../input-data/lc-d0-data/v2_prompt_wsyst_D0_3050_finer_updated_x.root"
+  lc: "../input-data/lc-d0-data/merged-lc-promptvn_withsyst_r2-0.2%_updated_x.root"
+  ds: "../input-data/lc-d0-data/v2_prompt_wsyst_Ds_3050_updated_x.root"
+  dplus: "../input-data/lc-d0-data/v2_prompt_wsyst_Dplus_3050_updated_x.root"
+  pi: "../input-data/light-flavor-data/HEPData-ins1672822-v1-csv-SP/Table5.csv"
+  models: "../input-models"
+  performance: "../input-data/lc-d0-data/lc-performance/pre/"
+
+plot_style:
+  global:
+    padleftmargin: 0.15
+    padrightmargin: 0.05
+    padbottommargin: 0.15
+    padtopmargin: 0.05
+    titleoffset: 1.1
+    titleoffsety: 1.4
+    palette: "kRainBow"
+    titlesize: 0.06
+    labelsize: 0.055
+    maxdigits: 4
+    labelfont: 42
+    titlefont: 42
+  compare_allD:
+    padleftmargin: 0.15
+    padrightmargin: 0.03
+    padbottommargin: 0.15
+    padtopmargin: 0.03
+    titleoffsety: 1.2
+    titleoffsetx: 1.0
+    labelsize: 0.05
+
+performance:
+  pt_low: 6
+  pt_high: 8
+  data_version: "02"
+  axis_ranges:
+    mass_xmin: 2.18
+    mass_xmax: 2.36
+    v2_xmin: 2.18
+    v2_xmax: 2.36
+    versions:
+      "00":
+        mass_ymin: 1.65e4
+        mass_ymax: 2.6e4
+        v2_ymin: 0.17
+        v2_ymax: 0.222
+      "01":
+        mass_ymin: 7500
+        mass_ymax: 15000
+        v2_ymin: 0.24
+        v2_ymax: 0.299
+      "02":
+        mass_ymin: 700
+        mass_ymax: 6500
+        v2_ymin: 0.28
+        v2_ymax: 0.44
+
+ncq:
+  do_ket_nq: false
+  x_label_pt: "#it{p}_{T}/#it{n}_{q}"
+  x_label_ket: "kE_{T} /#it{n}_{q}"
+  y_label: "#it{v}_{2} /#it{n}_{q}"
+  x_min: 0.2
+  x_max_pt: 12.5
+  x_max_ket: 11.9
+  y_max: 0.1435
+
+log_labels:
+  ticks_to_show: [0.5, 2, 4, 6, 8, 10, 20]
+
+markers:
+  d0: "kFullCircle"
+  lc: "kFullSquare"
+  ds: "kFullCross"
+  dplus: "kFullDiamond"
+  jpsi: "kFullCrossX"
+  pi: "kFullDoubleDiamond"
+  ks: "kOpenCircle"
+  lambda: "kOpenSquare"
+  size:
+    default: 2
+    small: 1.5
+    tiny: 1.0

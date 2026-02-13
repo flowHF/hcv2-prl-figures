@@ -8,17 +8,26 @@ import sys
 sys.path.append('./')
 from plot_untils import GetLegend, GetCanvas4sub, SetGlobalStyle, SetObjectStyle, GetInvMassHistAndFit, GetV2HistAndFit
 from plot_untils import get_edges_from_hist, preprocess_ncq, read_txt, DrawLineAt0, rebin_safely, preprocess, preprocess_data, read_hists, get_band, get_latex, merge_asymmetric_errors, fill_graph, model_chi2, graph_to_hist_with_errors, get_interp_hist
-from plot_untils import scale_x_errors, compute_ratio_graph, pdf2eps_imagemagick
+from plot_untils import scale_x_errors, compute_ratio_graph, pdf2eps_imagemagick, preprocess_graph_ncq, model_chi2_old
 SetGlobalStyle(padleftmargin=0.15, padrightmargin=0.08, padbottommargin=0.16, padtopmargin=0.075,
                titleoffset=1.3, palette=ROOT.kRainBow, titlesize=0.06, labelsize=0.055, maxdigits=4)
 
 
 def compare_allD(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, no_J_Psi=False, no_Tamu=False):
     '''Compare Lc v2 with D0, Ds, Dplus, J/psi and pi'''
+    d0_hists[0].SetMarkerSize(2)
+    lc_hists[0].SetMarkerSize(2)
     SetGlobalStyle(padleftmargin=0.12, padrightmargin=0.03, padbottommargin=0.12, padtopmargin=0.03,
                titleoffset=1.1, palette=ROOT.kRainBow, titlesize=0.05, labelsize=0.035, maxdigits=4)
     data_path = '../input-data'
-    colors_allD = {'ds':ROOT.kSpring+4, 'dplus':ROOT.kCyan+2, 'jpsi':ROOT.kViolet+1}
+    colors_allD = {'ds':ROOT.kSpring+3, 'dplus':ROOT.kCyan+3, 'jpsi':ROOT.kViolet+3}
+    colors_allD = {'ds':ROOT.kOrange+2, 'dplus':ROOT.kGreen+2, 'jpsi':ROOT.kViolet+3}
+    # Lc: kRed+1, D+: kOrange+2, Ds: kGreen+2, and D0: kAzure+4
+    # colors_allD = {'ds':ROOT.TColor.GetColor("#A5E6A5"), 'dplus':ROOT.TColor.GetColor("#4682B4"), 'jpsi':ROOT.TColor.GetColor("#DDA0DD")}
+    # Int_t color_FONLL = ROOT.TColor.GetColor("#4682B4");   // 偏灰的深蓝色（FONLL 蓝色区块）
+    # Int_t color_modHRF = ROOT.TColor.GetColor("#F4A460");  // 暖橙色（mod-HRF 橙色区块）
+    # Int_t color_SACOT = ROOT.TColor.GetColor("#90EE90");   // 淡绿色（SACOT 绿色区块）
+    # Int_t color_kfact = ROOT.TColor.GetColor("#DDA0DD");   // 淡紫色（k_fact. 紫色区块）
     markerstyles_allD = {'ds':ROOT.kFullCross, 'dplus':ROOT.kFullDiamond, 'jpsi':ROOT.kFullCrossX}
     Ds_path = f'{data_path}/lc-d0-data/v2_prompt_wsyst_Ds_3050.root'
     Dplus_path = f'{data_path}/lc-d0-data/v2_prompt_wsyst_Dplus_3050.root'
@@ -44,16 +53,16 @@ def compare_allD(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, no_J_Psi=False, no
     df_pi_30_50_sp = preprocess_data([data_pi_30_40_sp, data_pi_40_50_sp], header=12)
     graph_pi_30_50 = fill_graph(df_pi_30_50)
     graph_pi_30_50_sp = fill_graph(df_pi_30_50_sp)
-    df_pi_30_40_sp  = preprocess_data([data_pi_30_40_sp], header=12, get_source_data=True)
+    df_pi_30_40_sp  = preprocess_data([data_pi_30_40_sp], header=12, get_source_data=True, columns=["PT [GEV]", "CH_PIONS_v2_3040", "stat +", "sys +"])
     graph_pi_30_40_stat = fill_graph(df_pi_30_40_sp, columns=["PT [GEV]", "CH_PIONS_v2_3040", "stat +"])
     graph_pi_30_40_syst = fill_graph(df_pi_30_40_sp, columns=["PT [GEV]", "CH_PIONS_v2_3040", "sys +"])
     target_bins=list(df_pi_30_40_sp['PT [GEV] LOW'])
     target_bins.append(df_pi_30_40_sp['PT [GEV] HIGH'].values[-1])
     # print('target_bins', target_bins)
     scale_x_errors(graph_pi_30_40_syst, scale_factor=0.6, target_bins=target_bins)
-    SetObjectStyle(graph_pi_30_50_sp, color=ROOT.kBlack, markerstyle=ROOT.kFullDoubleDiamond, linewidth=2, markersize=3)
-    SetObjectStyle(graph_pi_30_40_stat, color=ROOT.kBlack, markerstyle=ROOT.kFullDoubleDiamond, linewidth=2, markersize=3)
-    SetObjectStyle(graph_pi_30_40_syst, color=ROOT.kBlack, linewidth=2, fillstyle=0)
+    SetObjectStyle(graph_pi_30_50_sp, color=ROOT.kGray+2, markerstyle=ROOT.kFullDoubleDiamond, linewidth=2, markersize=3)
+    SetObjectStyle(graph_pi_30_40_stat, color=ROOT.kGray+2, markerstyle=ROOT.kFullDoubleDiamond, linewidth=2, markersize=3)
+    SetObjectStyle(graph_pi_30_40_syst, color=ROOT.kGray+2, linewidth=2, fillstyle=0)
 
     models_path = '../input-models/arxivv1905.09216-tamu'
     tamu_lc_high=f'{models_path}/lc-up.dat'
@@ -81,31 +90,32 @@ def compare_allD(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, no_J_Psi=False, no
 
     canvas = ROOT.TCanvas("LcVsAllD_wTamu", "LcVsAllD_wTamu", 1200, 1000)
     canvas.SetLogx()
-    frame = canvas.DrawFrame(0.499, -0.01, 27.7, 0.4,
+    frame = canvas.DrawFrame(0.455, -0.01, 27.7, 0.4,
                             ';#it{p}_{T} (GeV/#it{c});#it{v}_{2}')
     frame.GetYaxis().SetDecimals()
     frame.GetXaxis().SetMoreLogLabels()
-        
+    
+    graph_pi_30_40_stat.Draw('same epz')
+    graph_pi_30_40_syst.Draw('same e2z')   
     if not no_Tamu:
         polyline_lc_tamu.Draw('F')
         polyline_d0_tamu.Draw('F')
         polyline_ds_tamu.Draw('F')
         if not no_J_Psi:
             graph_tamu_J_psi.Draw('same l')    
-    lc_hists[0].Draw('same epz')
-    lc_hists[1].Draw('same e2z')
     if not no_J_Psi:
         J_psi_hists[0].Draw('same epz')
         J_psi_hists[1].Draw('same e2z')
-    ds_hists[0].Draw('same epz')
-    ds_hists[1].Draw('same e2z')
     Dplus_hists[0].Draw('same epz')
     Dplus_hists[1].Draw('same e2z')
+    ds_hists[0].Draw('same epz')
+    ds_hists[1].Draw('same e2z')
+    lc_hists[0].Draw('same epz')
+    lc_hists[1].Draw('same e2z')
     d0_hists[0].Draw('same epz')
     d0_hists[1].Draw('same e2z')
     # graph_pi_30_50_sp.Draw('same epz')
-    graph_pi_30_40_stat.Draw('same epz')
-    graph_pi_30_40_syst.Draw('same e2z')
+    
 
     lat_large, lat_mid, latLabel = get_latex()
     latLabel.SetTextSize(0.03)
@@ -130,10 +140,18 @@ def compare_allD(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, no_J_Psi=False, no
     legend.AddEntry("", "", "") 
     
     # legend.AddEntry(graph_pi_30_50_sp, "#pi^{#pm}  JHEP 09 (2018) 006", "p")
-    legend.AddEntry(graph_pi_30_40_stat, "#pi^{#pm}  JHEP 09 (2018) 006", "p")
+    if not no_J_Psi and no_Tamu:
+        legend.AddEntry(graph_pi_30_40_stat, "#pi^{#pm}  JHEP 09 (2018) 006", "p")
+    elif not no_Tamu:
+        legend.AddEntry(graph_pi_30_40_stat, "#pi^{#pm}  JHEP 09 (2018) 006", "p")
     # legend.AddEntry(graph_pi_30_50, "#pi #pm  JHEP 05 (2023) 243", "p")
     legend.Draw("same")
     legend_r = TLegend(position_x+0.415, position_y+0.01, position_xtop+0.4, position_ytop-0.06)
+    if no_J_Psi and no_Tamu:
+        legend_r = TLegend(position_x+0.38, position_y-0.15, position_xtop+0.4, position_ytop-0.06)
+        legend_r.AddEntry(graph_pi_30_40_stat, "#pi^{#pm}  JHEP 09 (2018) 006", "p")
+    elif no_J_Psi:
+        legend_r = TLegend(position_x+0.455, position_y+0.055, position_xtop+0.4, position_ytop-0.06)
     legend_r.SetTextFont(42)
     legend_r.SetTextSize(legend_TextSize)
     legend_r.SetBorderSize(0)
@@ -158,21 +176,26 @@ def compare_allD(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, no_J_Psi=False, no
     legend_r.Draw("same")
     lat_large.DrawLatex(position_x, position_ytop, 'ALICE  Pb#font[122]{-}Pb 30#font[122]{-}50% ')
     latLabel.DrawLatex(position_x, position_ytop-0.05, "#it{v}_{2} {SP, |#Delta#it{#eta}| > 1.3},  #sqrt{#it{s}_{NN}} = 5.36 TeV")  # , 2.5 < y < 4
+    if no_J_Psi and no_Tamu:
+        latLabel.DrawLatex(position_x+0.38, position_ytop-0.05, "#it{v}_{2} {2, |#Delta#it{#eta}| > 2},  #sqrt{#it{s}_{NN}} = 5.02 TeV, 30#font[122]{-}40%")
+    else:
+        latLabel.DrawLatex(position_x, position_ytop-0.2, "#it{v}_{2} {2, |#Delta#it{#eta}| > 2},  #sqrt{#it{s}_{NN}} = 5.02 TeV, 30#font[122]{-}40%")
     if not no_J_Psi:
         latLabel.DrawLatex(position_x+0.415, position_ytop-0.05, 
                         "#it{v}_{2} {SP, |#Delta#it{#eta}| > 1.1},  #sqrt{#it{s}_{NN}} = 5.02 TeV")  # , |y| < 0.8"
-    latLabel.DrawLatex(position_x, position_ytop-0.2, "#it{v}_{2} {2, |#Delta#it{#eta}| > 2},  #sqrt{#it{s}_{NN}} = 5.02 TeV, 30#font[122]{-}40%")
     # latLabel.DrawLatex(position_x+0.02, 0.66, "#it{v}_{2} {2, |#Delta#it{#eta}| > 0.8},  #sqrt{#it{s}_{NN}} = 5.02 TeV")
     if not no_Tamu:
-        latLabel.DrawLatex(position_x+0.415, position_ytop-0.145 if not no_J_Psi else position_ytop-0.05, "TAMU,  #sqrt{#it{s}_{NN}} = 5.02 TeV")
+        latLabel.DrawLatex(position_x+0.455, position_ytop-0.145 if not no_J_Psi else position_ytop-0.05, "TAMU,  #sqrt{#it{s}_{NN}} = 5.02 TeV")
 
     # lat_mid.DrawLatex(position_x, 0.81, 'Pb#font[122]{-}Pb, 30#font[122]{-}50% ')
     canvas.Update()
     canvas.Draw()
     out_name = f'{outDir}/LcVsAllD_wTamu.pdf'
-    if no_Tamu:
+    if no_J_Psi and no_Tamu:
+        out_name = f'{outDir}/LcVsAllD_woJpsi_woTamu.pdf'
+    elif no_Tamu:
         out_name = f'{outDir}/LcVsAllD_woTamu.pdf'
-    if no_J_Psi:
+    elif no_J_Psi:
         out_name = out_name.replace('.pdf', '_woJpsi.pdf')
     canvas.SaveAs(out_name)
     if debug:
@@ -186,8 +209,8 @@ def compare_allD(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, no_J_Psi=False, no
 def compare_with_model(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, do_ncq=False, split=False, logx=False):
     colors_lc=colors_d0
     '''Compare Lc and D0 v2 with transport model calculations'''
-    d0_hists[0].SetMarkerSize(1)
-    lc_hists[0].SetMarkerSize(1)
+    d0_hists[0].SetMarkerSize(1.5)
+    lc_hists[0].SetMarkerSize(1.5)
     data_path = '../input-models'
     tamu_lc_high=f'{data_path}/arxivv1905.09216-tamu/lc-up.dat'
     tamu_lc_low=f'{data_path}/arxivv1905.09216-tamu/lc-low.dat'
@@ -309,10 +332,188 @@ def compare_with_model(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, do_ncq=False
         lc_hists_interp_rebin = [rebin_safely(hist, '', new_bin_edges=get_edges_from_hist(lc_hists_target), fixed_rebin=1)
                                  for hist in lc_hists_interp]
         d0_hists_interp = [hist_tamu_d0, hist_catania_d0, hist_langevin_d0, hist_htl_d0, hist_lat_d0, hist_lbt_d0, hist_epos4hq_d0]
+
+        def debug_sys_correlation_test(data_graph, model_hist, stat_graph, 
+                                    reso_syst_graph, fit_syst_graph, fd_syst_graph, ndf):
+            """
+            Test function for systematic error correlation effects on chi2 calculation
+            Covers full range of correlation assumptions (intra-bin / inter-bin)
+            Adapted for D0 v2 analysis (LC-D0 comparison)
+            
+            Inputs:
+                data_graph: TGraphAsymmErrors - Experimental data (v2 values + total errors)
+                model_hist: TH1F - Model prediction histogram
+                stat_graph: TGraphAsymmErrors - Statistical errors only
+                reso_syst_graph: TGraphAsymmErrors - Systematic error (event-plane resolution)
+                fit_syst_graph: TGraphAsymmErrors - Systematic error (fit uncertainty)
+                fd_syst_graph: TGraphAsymmErrors - Systematic error (fraction uncertainty)
+                ndf: int - Number of degrees of freedom (pT bins)
+            
+            Outputs:
+                test_results: dict - Chi2/ndf and covariance matrix for all scenarios
+            """
+            # Store results for all test scenarios
+            test_results = {}
+
+            # ====================== Scenario 0: Baseline (Central Case) ======================
+            # Intra-bin: All systematic sources fully uncorrelated
+            # Inter-bin: reso CORRELATED, fit/fraction UNCORRELATED (physical default)
+            print("\n=== Scenario 0: Baseline (Intra-bin Uncorr | Inter-bin: reso Corr, fit/fraction Uncorr) ===")
+            chi2_base, ndf_base, chi2ndf_base, cov_base = model_chi2(
+                data_asymm=data_graph,
+                h_model=model_hist,
+                stat_err_data=stat_graph,
+                sys_corr_components=[reso_syst_graph],  # Inter-bin correlated: reso
+                sys_uncorr_components=[fit_syst_graph, fd_syst_graph],  # Inter-bin uncorrelated: fit/fraction
+                rho_sys_uncorr=np.eye(2),  # Intra-bin: fit/fraction fully uncorrelated (identity matrix)
+                ndf=ndf
+            )
+            test_results["0_Baseline"] = {"chi2/ndf": chi2ndf_base, "cov_matrix": cov_base}
+
+            # ====================== Scenario 1: All Uncorrelated (New) ======================
+            # Intra-bin: All systematic sources fully uncorrelated
+            # Inter-bin: reso/fit/fraction ALL UNCORRELATED (extreme control)
+            # print("\n=== Scenario 1: All Uncorrelated (Intra-bin Uncorr | Inter-bin: All Uncorr) ===")
+            chi2_all_uncorr, ndf_all_uncorr, chi2ndf_all_uncorr, cov_all_uncorr = model_chi2(
+                data_asymm=data_graph,
+                h_model=model_hist,
+                stat_err_data=stat_graph,
+                sys_corr_components=[],  # No inter-bin correlated components (reso included below)
+                sys_uncorr_components=[reso_syst_graph, fit_syst_graph, fd_syst_graph],  # All sys inter-bin uncorr
+                rho_sys_uncorr=np.eye(3),  # Intra-bin: reso/fit/fraction fully uncorrelated (3x3 identity)
+                ndf=ndf
+            )
+            test_results["1_All_Uncorrelated"] = {"chi2/ndf": chi2ndf_all_uncorr, "cov_matrix": cov_all_uncorr}
+
+            # ====================== Scenario 2: Supplement Test 1 ======================
+            # Intra-bin: All systematic sources fully uncorrelated
+            # Inter-bin: reso/fit/fraction ALL CORRELATED (extreme control)
+            # print("\n=== Scenario 2: Supplement Test 1 (Intra-bin Uncorr | Inter-bin: All Corr) ===")
+            chi2_corr1, ndf_corr1, chi2ndf_corr1, cov_corr1 = model_chi2(
+                data_asymm=data_graph,
+                h_model=model_hist,
+                stat_err_data=stat_graph,
+                sys_corr_components=[reso_syst_graph, fit_syst_graph, fd_syst_graph],  # All sys inter-bin corr
+                sys_uncorr_components=[],  # No inter-bin uncorrelated components
+                rho_sys_uncorr=None,
+                ndf=ndf
+            )
+            test_results["2_Supplement1_All_Interbin_Corr"] = {"chi2/ndf": chi2ndf_corr1, "cov_matrix": cov_corr1}
+
+            # ====================== Scenario 3: Supplement Test 2 ======================
+            # Intra-bin: fit/fraction FULLY CORRELATED
+            # Inter-bin: reso CORRELATED, fit/fraction UNCORRELATED (extreme intra-bin control)
+            # print("\n=== Scenario 3: Supplement Test 2 (Intra-bin Corr | Inter-bin: reso Corr, fit/fraction Uncorr) ===")
+            chi2_corr2, ndf_corr2, chi2ndf_corr2, cov_corr2 = model_chi2(
+                data_asymm=data_graph,
+                h_model=model_hist,
+                stat_err_data=stat_graph,
+                sys_corr_components=[reso_syst_graph],  # Inter-bin correlated: reso
+                sys_uncorr_components=[fit_syst_graph, fd_syst_graph],  # Inter-bin uncorrelated: fit/fraction
+                rho_sys_uncorr=np.ones((2, 2)),  # Intra-bin: fit/fraction fully correlated (all-1 matrix)
+                ndf=ndf
+            )
+            test_results["3_Supplement2_Intrabin_Corr"] = {"chi2/ndf": chi2ndf_corr2, "cov_matrix": cov_corr2}
+
+            # ====================== Scenario 4: Supplement Test 3 ======================
+            # Intra-bin: fit/fraction FULLY CORRELATED
+            # Inter-bin: reso/fit/fraction ALL CORRELATED (double extreme control)
+            # print("\n=== Scenario 4: Supplement Test 3 (Intra-bin Corr | Inter-bin: All Corr) ===")
+            chi2_corr3, ndf_corr3, chi2ndf_corr3, cov_corr3 = model_chi2(
+                data_asymm=data_graph,
+                h_model=model_hist,
+                stat_err_data=stat_graph,
+                sys_corr_components=[reso_syst_graph, fit_syst_graph, fd_syst_graph],  # All sys inter-bin corr
+                sys_uncorr_components=[fit_syst_graph, fd_syst_graph],  # For intra-bin correlation setting
+                rho_sys_uncorr=np.ones((2, 2)),  # Intra-bin: fit/fraction fully correlated
+                ndf=ndf
+            )
+            test_results["4_Supplement3_Full_Corr"] = {"chi2/ndf": chi2ndf_corr3, "cov_matrix": cov_corr3}
+
+            # ====================== Scenario 5: Partial Intra-bin Correlation (Physical) ======================
+            # Intra-bin: fit/fraction PARTIALLY CORRELATED (rho=0.5, realistic case)
+            # Inter-bin: reso CORRELATED, fit/fraction UNCORRELATED
+            # print("\n=== Scenario 5: Partial Intra-bin Correlation (rho=0.5 | Inter-bin: reso Corr) ===")
+            rho_partial = np.array([[1.0, 0.5], [0.5, 1.0]])  # fit-fraction correlation = 0.5
+            chi2_partial, ndf_partial, chi2ndf_partial, cov_partial = model_chi2(
+                data_asymm=data_graph,
+                h_model=model_hist,
+                stat_err_data=stat_graph,
+                sys_corr_components=[reso_syst_graph],
+                sys_uncorr_components=[fit_syst_graph, fd_syst_graph],
+                rho_sys_uncorr=rho_partial,
+                ndf=ndf
+            )
+            test_results["5_Partial_Intrabin_Corr"] = {"chi2/ndf": chi2ndf_partial, "cov_matrix": cov_partial}
+
+            # ====================== Scenario 6: Reso Only (Baseline Control) ======================
+            # Intra-bin: No fit/fraction contributions
+            # Inter-bin: reso CORRELATED (isolate reso effect)
+            # print("\n=== Scenario 6: Reso Only (Intra-bin None | Inter-bin: reso Corr) ===")
+            chi2_only_reso, ndf_only_reso, chi2ndf_only_reso, cov_only_reso = model_chi2(
+                data_asymm=data_graph,
+                h_model=model_hist,
+                stat_err_data=stat_graph,
+                sys_corr_components=[reso_syst_graph],
+                sys_uncorr_components=[],
+                rho_sys_uncorr=None,
+                ndf=ndf
+            )
+            test_results["6_Reso_Only"] = {"chi2/ndf": chi2ndf_only_reso, "cov_matrix": cov_only_reso}
+
+            # ====================== Results Summary ======================
+            print("\n" + "="*70)
+            print("SYSTEMATIC ERROR CORRELATION TEST RESULTS SUMMARY")
+            print("="*70)
+            for scene_id, result in sorted(test_results.items()):
+                scene_name = scene_id.split("_")[1:]
+                print(f"{scene_id: <25} | chi2/ndf = {result['chi2/ndf']:.4f}")
+            print("="*70)
+
+            return test_results
+
+
+        d0_path = '../input-data/lc-d0-data/v2_prompt_wsyst_D0_3050_finer.root'
+        lc_path = '../input-data/lc-d0-data/merged-lc-promptvn_withsyst_r2-0.2%.root'
+        d0_root_file = ROOT.TFile.Open(d0_path, "READ")
+        d0_stat_graph = d0_root_file.Get("gvn_prompt_stat")
+        d0_reso_syst_graph = d0_root_file.Get("reso_syst")
+        d0_fit_syst_graph = d0_root_file.Get("fit_syst")
+        d0_fd_syst_graph = d0_root_file.Get("fd_syst")
+        lc_root_file = ROOT.TFile.Open(lc_path, "READ")
+        lc_stat_graph = lc_root_file.Get("gvn_prompt_stat")
+        lc_reso_syst_graph = lc_root_file.Get("reso_syst")
+        lc_fit_syst_graph = lc_root_file.Get("fit_syst")
+        lc_fd_syst_graph = lc_root_file.Get("fd_syst")
         for hist in d0_hists_interp_rebin:
-            model_chi2(d0_tot, hist, ndf=12)
+            chi2, ndf, chi2_ndf =model_chi2_old(d0_tot, hist, ndf=12)
+            print(f'[simple full uncrelated] Chi2/ndf for D0 vs model {hist.GetName()}: {chi2_ndf:.4f}')
+            # debug_sys_correlation_test(d0_tot, hist, d0_hists[0], d0_hists[1], ndf=12)
+            test_results = debug_sys_correlation_test(
+            data_graph=d0_tot,
+            model_hist=hist,
+            stat_graph=d0_stat_graph,
+            reso_syst_graph=d0_reso_syst_graph,
+            fit_syst_graph=d0_fit_syst_graph,
+            fd_syst_graph=d0_fd_syst_graph,
+            ndf=12
+            )
+            # return
         for hist in lc_hists_interp_rebin:
-            model_chi2(lc_tot, hist, ndf=5)
+            chi2, ndf, chi2_ndf =model_chi2_old(lc_tot, hist, ndf=5)
+            print(f'[simple full uncrelated] Chi2/ndf for lc vs model {hist.GetName()}: {chi2_ndf:.4f}')
+            test_results = debug_sys_correlation_test(
+            data_graph=lc_tot,
+            model_hist=hist,
+            stat_graph=lc_stat_graph,
+            reso_syst_graph=lc_reso_syst_graph,
+            fit_syst_graph=lc_fit_syst_graph,
+            fd_syst_graph=lc_fd_syst_graph,
+            ndf=5
+            )
+        d0_root_file.Close()
+        lc_root_file.Close()
+        
     tamu_lc_high_x, tamu_lc_high_y = preprocess(tamu_lc_high, sep=",")
     tamu_lc_low_x, tamu_lc_low_y = preprocess(tamu_lc_low, sep=",")
     tamu_d0_high_x, tamu_d0_high_y = preprocess(tamu_d0_high, sep=",")
@@ -325,88 +526,112 @@ def compare_with_model(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, do_ncq=False
     polyline_lc_tamu = get_band(tamu_lc_low_x, tamu_lc_high_x, tamu_lc_low_y, tamu_lc_high_y, color_lc)
     polyline_d0_tamu = get_band(tamu_d0_low_x, tamu_d0_high_x, tamu_d0_low_y, tamu_d0_high_y, color_d0)
     polyline_lc_tamu.SetFillColorAlpha(colors_lc["tamu"], 0.5)
-    polyline_d0_tamu.SetFillColorAlpha(colors_d0["tamu"], 0.4)
+    polyline_d0_tamu.SetFillColorAlpha(colors_d0["tamu"], 0.5)
     # polyline_d0_tamu.SetFillStyle(3002) 
     # polyline_lc_tamu.SetFillStyle(3002) 
     polyline_d0_catania = get_band(d0_catania_x, d0_catania_x, d0_catania_low_y, d0_catania_high_y, color_d0)
     polyline_lc_catania = get_band(lc_catania_x, lc_catania_x, lc_catania_low_y, lc_catania_high_y, color_lc)
-    polyline_lc_catania.SetFillColorAlpha(colors_lc["catania"], 0.3)
-    polyline_d0_catania.SetFillColorAlpha(colors_d0["catania"], 0.8)
-    
+    polyline_lc_catania.SetFillColorAlpha(colors_lc["catania"], 0.6)
+    polyline_d0_catania.SetFillColorAlpha(colors_d0["catania"], 0.6)
+    styles_d0 = {
+    "langevin": 2,        # 深红色
+    "htl": 6,           # 深绿色
+    "latQCD": 7,       # 深橙色/棕色
+    "lbt": 3,          # 黄绿色
+    "epos4hq": 9         # 深粉色
+    }
+    # styles_d0 = {
+    # "langevin": 1,        # 深红色
+    # "htl": 1,           # 深绿色
+    # "latQCD": 1,       # 深橙色/棕色
+    # "lbt": 1,          # 黄绿色
+    # "epos4hq": 1         # 深粉色
+    # }
     graph_lc_Langevin_fnwsnloaver = ROOT.TGraph(len(lc_Langevin_fnwsnloaver_x), array.array('d', lc_Langevin_fnwsnloaver_x), array.array('d', lc_Langevin_fnwsnloaver_y))
     graph_lc_Langevin_fnwsnloaver.SetLineColor(colors_lc["langevin"])
     graph_lc_Langevin_fnwsnloaver.SetLineWidth(2)
-    graph_lc_Langevin_fnwsnloaver.SetLineStyle(2)
+    graph_lc_Langevin_fnwsnloaver.SetLineStyle(styles_d0["langevin"])
     graph_d0_Langevin_fnwsnloaver = ROOT.TGraph(len(d0_Langevin_x), array.array('d', d0_Langevin_x), array.array('d', d0_Langevin_y))
     graph_d0_Langevin_fnwsnloaver.SetLineColor(colors_d0["langevin"])
     graph_d0_Langevin_fnwsnloaver.SetLineWidth(2)
-    graph_d0_Langevin_fnwsnloaver.SetLineStyle(2)
+    graph_d0_Langevin_fnwsnloaver.SetLineStyle(styles_d0["langevin"])
 
     graph_lc_htl = ROOT.TGraph(len(HTL_L_c.iloc[:, 0]), array.array('d', HTL_L_c.iloc[:, 0]), array.array('d', HTL_L_c.iloc[:, 1]))
     graph_lc_htl.SetLineColor(colors_lc["htl"])
     graph_lc_htl.SetLineWidth(2)
-    graph_lc_htl.SetLineStyle(6)
+    graph_lc_htl.SetLineStyle(styles_d0["htl"])
     graph_d0_htl = ROOT.TGraph(len(HTL_D0.iloc[:, 0]), array.array('d', HTL_D0.iloc[:, 0]), array.array('d', HTL_D0.iloc[:, 1]))
     graph_d0_htl.SetLineColor(colors_d0["htl"])
     graph_d0_htl.SetLineWidth(2)
-    graph_d0_htl.SetLineStyle(6)
+    graph_d0_htl.SetLineStyle(styles_d0["htl"])
 
     graph_lc_lat = ROOT.TGraph(len(latQCD_L_c.iloc[:, 0]), array.array('d', latQCD_L_c.iloc[:, 0]), array.array('d', latQCD_L_c.iloc[:, 1]))
     graph_lc_lat.SetLineColor(colors_lc["latQCD"])
     graph_lc_lat.SetLineWidth(2)
-    graph_lc_lat.SetLineStyle(9)
+    graph_lc_lat.SetLineStyle(styles_d0["latQCD"])
     graph_d0_lat = ROOT.TGraph(len(latQCD_D0.iloc[:, 0]), array.array('d', latQCD_D0.iloc[:, 0]), array.array('d', latQCD_D0.iloc[:, 1]))
     graph_d0_lat.SetLineColor(colors_d0["latQCD"])
     graph_d0_lat.SetLineWidth(2)
-    graph_d0_lat.SetLineStyle(9)
+    graph_d0_lat.SetLineStyle(styles_d0["latQCD"])
 
     graph_lc_lbt = ROOT.TGraph(len(lc_lbt.iloc[:, 0]), array.array('d', lc_lbt.iloc[:, 0]), array.array('d', lc_lbt.iloc[:, 1]))
     graph_lc_lbt.SetLineColor(colors_lc["lbt"])
     graph_lc_lbt.SetLineWidth(2)
-    graph_lc_lbt.SetLineStyle(7)
+    graph_lc_lbt.SetLineStyle(styles_d0["lbt"])
     graph_d0_lbt = ROOT.TGraph(len(d0_lbt.iloc[:, 0]), array.array('d', d0_lbt.iloc[:, 0]), array.array('d', d0_lbt.iloc[:, 1]))
     graph_d0_lbt.SetLineColor(colors_d0["lbt"])
     graph_d0_lbt.SetLineWidth(2)
-    graph_d0_lbt.SetLineStyle(7)
+    graph_d0_lbt.SetLineStyle(styles_d0["lbt"])
 
     graph_lc_epos4hq = ROOT.TGraph(len(lc_epos4hq.iloc[:, 0]), array.array('d', lc_epos4hq.iloc[:, 0]), array.array('d', lc_epos4hq.iloc[:, 1]))
     graph_lc_epos4hq.SetLineColor(colors_lc["epos4hq"])
-    graph_lc_epos4hq.SetLineWidth(3)
-    graph_lc_epos4hq.SetLineStyle(3)
+    graph_lc_epos4hq.SetLineWidth(2)
+    graph_lc_epos4hq.SetLineStyle(styles_d0["epos4hq"])
     graph_d0_epos4hq = ROOT.TGraph(len(d0_epos4hq.iloc[:, 0]), array.array('d', d0_epos4hq.iloc[:, 0]), array.array('d', d0_epos4hq.iloc[:, 1]))
     graph_d0_epos4hq.SetLineColor(colors_d0["epos4hq"])
-    graph_d0_epos4hq.SetLineWidth(3)
-    graph_d0_epos4hq.SetLineStyle(3)
+    graph_d0_epos4hq.SetLineWidth(2)
+    graph_d0_epos4hq.SetLineStyle(styles_d0["epos4hq"])
     # print(lc_Langevin_fnwsnloaver_x)
     # graph_lc_Langevin_naver = ROOT.TGraph(len(lc_Langevin_naver_x), array.array('d', lc_Langevin_naver_x), array.array('d', lc_Langevin_naver_y))
     # graph_lc_Langevin_naver.SetLineColor(ROOT.kBlack)
     # graph_lc_Langevin_naver.SetLineWidth(2)
     
     lat_large, lat_mid, latLabel = get_latex()
-    latLabel.SetTextSize(0.035)
+    lat_large.SetTextSize(0.07)
+    lat_mid.SetTextSize(0.055)
+    latLabel.SetTextSize(0.05)
     legend_TextSize = latLabel.GetTextSize()
-
-    canvas = ROOT.TCanvas("c", "Four-partition canvas", 1200, 800)
-    # Define height ratios: 70% upper, 30% lower
-    upper_height = 0.7
-    lower_height = 0.3
-    gap = 0.01
-    # Create upper container (70% height)
-    upper = ROOT.TPad("uppe", "Upper part", 0, lower_height - gap, 1, 1)
-    upper.SetMargin(0.16, 0.08, 0.005, 0.075)  # Adjust padding
-    upper.Divide(2, 1, 0, 0)  # Divide upper part into left and right
-    upper.Draw()
-    # Create lower container (30% height)
-    lower = ROOT.TPad("lowe", "Lower part", 0, 0, 1, lower_height + gap)
-    lower.SetMargin(0.16, 0.08, 0.25, 0.005)  # Adjust padding
-    lower.Divide(2, 1, 0, 0)  # Divide lower part into left and right
-    lower.Draw()
+    
+    canvas = ROOT.TCanvas("c", "Uniform Style Canvas", 1200, 800)
+    gap = 0
+    br = 0.4
+    
+    # 基础分区
+    canvas.Divide(1, 2, 0, gap)
+    
+    # 上部分区
+    upper = canvas.GetPad(1)
+    upper.SetPad(0, br + gap, 1, 1)
+    upper.SetMargin(0.16, 0.08, 0, 0.075)
+    upper.Divide(2, 1, 0, 0)
+    
+    # 下部分区
+    lower = canvas.GetPad(2)
+    lower.SetPad(0, 0, 1, br - gap)
+    lower.SetMargin(0.16, 0.08, 0.2, 0)
+    lower.Divide(2, 1, 0, 0)
+    
     left_pad = upper.cd(1)
-    frame = left_pad.DrawFrame(0., -0.0, 24.9, 0.31,
-                            ';#it{p}_{T} (GeV/#it{c});#it{v}_{2} {SP, |#Delta#it{#eta}| > 1.3}')
+    frame = left_pad.DrawFrame(0., -0.009, 24.9, 0.31,
+                            # ';#it{p}_{T} (GeV/#it{c});#it{v}_{2} {SP, |#Delta#it{#eta}| > 1.3}')
+                            ';#it{p}_{T} (GeV/#it{c});#it{v}_{2}')
+    frame.GetYaxis().SetTitleSize(0.07)
+    # frame.GetYaxis().SetTitleOffset(1.2)
+    frame.GetYaxis().SetLabelSize(0.06) 
     frame.GetXaxis().SetLabelSize(0)  # Hide x-axis labels
     frame.GetXaxis().SetTitleSize(0)
     frame.GetYaxis().SetDecimals()
+    frame.GetXaxis().SetTickLength(0.037)
     polyline_d0_tamu.Draw("F z")
     polyline_d0_catania.Draw("F z")
     graph_d0_Langevin_fnwsnloaver.Draw('same')
@@ -416,17 +641,17 @@ def compare_with_model(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, do_ncq=False
     graph_d0_lbt.Draw('same')
     d0_hists[0].Draw('same epz')
     d0_hists[1].Draw('same e2z')
-    position_x = 0.54
-    y_alice = 0.921
+    position_x = 0.5
+    y_alice = 0.911
     position_y_top = y_alice
-    legend = TLegend(position_x-0.01, position_y_top-0.56, position_x+0.35, position_y_top+0.04)
+    legend = TLegend(position_x-0.03, position_y_top-0.54, position_x+0.35, position_y_top-0.04)
     legend.Draw("same z")
     legend.SetTextSize(legend_TextSize)
     legend.SetTextFont(42)
-    legend.AddEntry(lc_hists[0], "Prompt #Lambda_{c}^{+}", "p")
-    legend.AddEntry(d0_hists[0], "Prompt D^{0}", "p")
-    legend.AddEntry("", "", "")
-    legend.SetNColumns(1)
+    # legend.AddEntry(lc_hists[0], "Prompt #Lambda_{c}^{+}", "p")
+    # legend.AddEntry(d0_hists[0], "Prompt D^{0}", "p")
+    # legend.AddEntry("", "", "")
+    # legend.SetNColumns(1)
     legend.AddEntry(graph_d0_lat, "POWLANG lQCD", "l")
     legend.AddEntry(graph_d0_htl, "POWLANG HTL", "l")
     legend.AddEntry(graph_d0_epos4hq, "EPOS4HQ", "l")
@@ -435,12 +660,12 @@ def compare_with_model(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, do_ncq=False
     legend.AddEntry(polyline_d0_catania, "Catania", "F")
     legend.AddEntry(polyline_d0_tamu, "TAMU", "F")
     legend.SetBorderSize(0)
-    position_x_l = 0.22
+    position_x_l = 0.21
     lat_large.DrawLatex(position_x_l, y_alice, 'ALICE')
     # latLabel.DrawLatex(0.18, 0.74, 'Preliminary')
     lat_mid.DrawLatex(position_x_l, y_alice-0.075, 'Pb#font[122]{-}Pb, 30#font[122]{-}50%')  #  centrality
     lat_mid.DrawLatex(position_x_l, y_alice-0.15, '#sqrt{#it{s}_{NN}} = 5.36 TeV')
-    latLabel.DrawLatex(position_x, position_y_top-0.12, "Transport models,  #sqrt{#it{s}_{NN}} = 5.02 TeV")
+    latLabel.DrawLatex(position_x-0.03, position_y_top, "Transport models,  #sqrt{#it{s}_{NN}} = 5.02 TeV")
     # latLabel.DrawLatex(0.18, position_y_top-0.2, "#sqrt{#it{s}_{NN}} = 5.02 TeV")
     # for hist in d0_hists_interp:
     #     hist.Draw('same p')
@@ -448,14 +673,16 @@ def compare_with_model(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, do_ncq=False
     frame = ratio_left_pad.DrawFrame(0., 0.1, 24.9, 15,
                             ';#it{p}_{T} (GeV/#it{c}) ;#frac{data}{model}')
     ratio_left_pad.SetLogy()
-    ratio_left_pad.SetGrid(1, 1)
+    ratio_left_pad.SetGrid(0, 1)
     # frame.GetYaxis().SetDecimals()
-    frame.GetYaxis().SetTitleSize(0.14)
-    frame.GetXaxis().SetTitleSize(0.14)  
-    frame.GetYaxis().SetLabelSize(0.12) 
-    frame.GetXaxis().SetLabelSize(0.12) 
-    frame.GetYaxis().SetTitleOffset(0.55)
+    frame.GetYaxis().SetTitleSize(0.1)
+    frame.GetXaxis().SetTitleSize(0.1)  
+    frame.GetYaxis().SetLabelSize(0.08) 
+    frame.GetXaxis().SetLabelSize(0.08) 
+    frame.GetYaxis().SetTitleOffset(0.75)
     frame.GetXaxis().SetTitleOffset(1)
+    frame.GetYaxis().SetTickLength(0.04)
+    frame.GetXaxis().SetTickLength(0.055)
     global_lines = []
     line = DrawLineAt0(0.5, 24.9)
     global_lines.append(line)  # Critical: retain reference
@@ -471,10 +698,11 @@ def compare_with_model(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, do_ncq=False
         ratio.Draw('same pez')
         ratios.append(ratio)
     right_pad = upper.cd(2)
-    frame = right_pad.DrawFrame(0.5, -0.0, 24.9, 0.31,
+    frame = right_pad.DrawFrame(0.5, -0.009, 24.9, 0.31,
                             ';#it{p}_{T} (GeV/#it{c});#it{v}_{2} {SP, |#Delta#it{#eta}| > 1.3}')
     frame.GetXaxis().SetLabelSize(0)  # Hide x-axis labels
     frame.GetXaxis().SetTitleSize(0)
+    frame.GetYaxis().SetTickLength(0.035)
     polyline_lc_tamu.Draw("F z")
     polyline_lc_catania.Draw("F z")
     graph_lc_Langevin_fnwsnloaver.Draw('same')
@@ -484,18 +712,22 @@ def compare_with_model(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, do_ncq=False
     graph_lc_epos4hq.Draw('same')
     lc_hists[0].Draw('same epz')
     lc_hists[1].Draw('same e2z')
-    position_x = 0.28
+    position_x = 0.22
     position_y_top = y_alice
-    # legend_r = TLegend(position_x-0.015, position_y_top-0.28, position_x+0.7, position_y_top+0.04)
-    # legend_r.Draw("same z")
-    # legend_r.SetTextSize(legend_TextSize)
-    # legend_r.SetTextFont(42)
-    # legend_r.SetFillColorAlpha(ROOT.kWhite, 0)  # 0 means fully transparent
-    # legend_r.AddEntry(lc_hists[0], "Prompt #Lambda_{c}^{+}", "p")
+    latLabel.DrawLatex(position_x, position_y_top, "#it{v}_{2} {SP, |#Delta#it{#eta}| > 1.3},  #sqrt{#it{s}_{NN}} = 5.36 TeV")  # , 2.5 < y < 4
+    
+    legend_r = TLegend(position_x-0.015, position_y_top-0.2, position_x+0.7, position_y_top+0.04)
+    legend_r.Draw("same z")
+    legend_r.SetTextSize(legend_TextSize)
+    legend_r.SetTextFont(42)
+    legend_r.SetFillColorAlpha(ROOT.kWhite, 0)  # 0 means fully transparent
+    legend_r.AddEntry(lc_hists[0], "Prompt #Lambda_{c}^{+}", "p")
+    legend_r.AddEntry(d0_hists[0], "Prompt D^{0}", "p")
+    legend_r.SetNColumns(2)
+    # legend.AddEntry("", "", "")
     # legend_r.AddEntry("", "", "")
     # legend_r.AddEntry("", "", "")
     # legend_r.AddEntry("", "", "")
-    # legend_r.SetNColumns(2)
     # legend_r.AddEntry(graph_lc_htl, "POWLANG HTL #Lambda_{c}^{+}", "l")
     # legend_r.AddEntry(graph_lc_lbt, "LBT-PNP #Lambda_{c}^{+}", "l")  # , #sqrt{#it{s}_{NN}} = 5.36 TeV
     # legend_r.AddEntry(graph_lc_lat, "POWLANG lQCD #Lambda_{c}^{+}", "l")
@@ -504,7 +736,7 @@ def compare_with_model(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, do_ncq=False
     # legend_r.AddEntry(polyline_lc_catania, "Catania #Lambda_{c}^{+}", "F")
     # legend_r.AddEntry("", "", "")
     # legend_r.AddEntry(polyline_lc_tamu, "TAMU #Lambda_{c}^{+}", "F")
-    # legend_r.SetBorderSize(0)
+    legend_r.SetBorderSize(0)
     # latLabel.DrawLatex(position_x, position_y_top-0.045, "Transport models,  #sqrt{#it{s}_{NN}} = 5.02 TeV")
     # for hist in lc_hists_interp:
     #     hist.Draw('same ep')
@@ -512,13 +744,21 @@ def compare_with_model(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, do_ncq=False
     frame = ratio_right_pad.DrawFrame(0.5, 0.1, 24.9, 15,
                             ';#it{p}_{T} (GeV/#it{c}) ;#frac{data}{model}')
     ratio_right_pad.SetLogy()
-    ratio_right_pad.SetGrid(1, 1)
-    frame.GetYaxis().SetTitleSize(0.14)  # Set X-axis title font size
-    frame.GetXaxis().SetTitleSize(0.14)  # Set X-axis title font size
-    frame.GetYaxis().SetLabelSize(0.12)  # Set Y-axis title font size
-    frame.GetXaxis().SetLabelSize(0.12)  # Set Y-axis title font size
-    frame.GetYaxis().SetTitleOffset(0.55)
+    ratio_right_pad.SetGrid(0, 1)
+    # frame.GetYaxis().SetTitleSize(0.14)  # Set X-axis title font size
+    # frame.GetXaxis().SetTitleSize(0.14)  # Set X-axis title font size
+    # frame.GetYaxis().SetLabelSize(0.12)  # Set Y-axis title font size
+    # frame.GetXaxis().SetLabelSize(0.12)  # Set Y-axis title font size
+    # frame.GetYaxis().SetTitleOffset(0.55)
+    # frame.GetXaxis().SetTitleOffset(1)
+    frame.GetYaxis().SetTitleSize(0.1)
+    frame.GetXaxis().SetTitleSize(0.1)  
+    frame.GetYaxis().SetLabelSize(0.08) 
+    frame.GetXaxis().SetLabelSize(0.08) 
+    frame.GetYaxis().SetTitleOffset(0.75)
     frame.GetXaxis().SetTitleOffset(1)
+    frame.GetYaxis().SetTickLength(0.045)
+    frame.GetXaxis().SetTickLength(0.045)
     line = DrawLineAt0(0.5, 24.9)
     line.Draw('same')
     for hist in lc_hists_interp_rebin:
@@ -528,7 +768,8 @@ def compare_with_model(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, do_ncq=False
         # ratio = lc_hists_origin.Clone('ratio_' + hist.GetName())
         SetObjectStyle(ratio, color=colors_lc[hist.GetName()[:-9]])
         # ratio.Divide(hist)
-        ratio.Draw('same ep')
+        # ratio.Draw('same pez')
+        ratio.Draw('same epz')
         ratios.append(ratio)
     canvas.Update()
     canvas.Draw()
@@ -596,11 +837,14 @@ def compare_with_data(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, do_ncq=False)
     data_ks_30_40_sp = f'{data_path_sp}/Table73.csv'
     data_ks_40_50_sp = f'{data_path_sp}/Table74.csv'
     df_ks_30_50_sp = preprocess_data([data_ks_30_40_sp, data_ks_40_50_sp], header=12)
+    df_ks_30_40_sp = preprocess_data([data_ks_30_40_sp], header=12, get_source_data=True, compine_syst_stat=True, columns=["PT [GEV]", "K0S_v2_3040", "stat +", "sys +"])
     
     h_ks_30_50 = fill_graph(df_ks_30_50)
-    SetObjectStyle(h_ks_30_50, color=ROOT.kAzure+1, markerstyle=ROOT.kFullSquare, linewidth=1)
+    SetObjectStyle(h_ks_30_50, color=ROOT.kAzure+2, markerstyle=ROOT.kFullSquare, linewidth=1)
     h_ks_30_50_sp = fill_graph(df_ks_30_50_sp)
-    SetObjectStyle(h_ks_30_50_sp, color=ROOT.kAzure+1, markerstyle=ROOT.kOpenSquare, linewidth=1)
+    SetObjectStyle(h_ks_30_50_sp, color=ROOT.kAzure+2, markerstyle=ROOT.kOpenSquare, linewidth=1)
+    h_ks_30_40_sp = fill_graph(df_ks_30_40_sp, columns=["PT [GEV]", "K0S_v2_3040", "stat +", "sys +"], compine_syst_stat=True)
+    SetObjectStyle(h_ks_30_40_sp, color=ROOT.kAzure+2, markerstyle=ROOT.kOpenSquare, linewidth=1)
 
     data_lambda_30_40 = f'{data_path}/Table24.csv'
     data_lambda_40_50 = f'{data_path}/Table33.csv'
@@ -608,13 +852,19 @@ def compare_with_data(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, do_ncq=False)
     data_lambda_30_40_sp = f'{data_path_sp}/Table87.csv'
     data_lambda_40_50_sp = f'{data_path_sp}/Table88.csv'
     df_lambda_30_50_sp = preprocess_data([data_lambda_30_40_sp, data_lambda_40_50_sp], header=12)
+    df_lambda_30_40_sp = preprocess_data([data_lambda_30_40_sp], header=12, get_source_data=True, compine_syst_stat=True, columns=["PT [GEV]", "LAMBDA_v2_3040", "stat +", "sys +"])
     
     h_lambda_30_50 = fill_graph(df_lambda_30_50)
-    SetObjectStyle(h_lambda_30_50, color=ROOT.kMagenta, markerstyle=ROOT.kFullSquare, linewidth=1)
+    SetObjectStyle(h_lambda_30_50, color=ROOT.kMagenta+1, markerstyle=ROOT.kFullSquare, linewidth=1)
     h_lambda_30_50_sp = fill_graph(df_lambda_30_50_sp)
-    SetObjectStyle(h_lambda_30_50_sp, color=ROOT.kMagenta, markerstyle=ROOT.kOpenSquare, linewidth=1)
-    all_data = {"ks":df_ks_30_50_sp,
-                "lambda":df_lambda_30_50_sp
+    SetObjectStyle(h_lambda_30_50_sp, color=ROOT.kMagenta+1, markerstyle=ROOT.kOpenSquare, linewidth=1)
+    h_lambda_30_40_sp = fill_graph(df_lambda_30_40_sp, columns=["PT [GEV]", "LAMBDA_v2_3040", "stat +", "sys +"], compine_syst_stat=True)
+    SetObjectStyle(h_lambda_30_40_sp, color=ROOT.kMagenta+1, markerstyle=ROOT.kOpenSquare, linewidth=1)
+    # all_data = {"ks":df_ks_30_50_sp,
+    #             "lambda":df_lambda_30_50_sp
+    #             }
+    all_data = {"ks":df_ks_30_40_sp,
+                "lambda":df_lambda_30_40_sp
                 }
     if do_ncq:
         return all_data
@@ -634,11 +884,14 @@ def compare_with_data(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, do_ncq=False)
     d0_hists[1].Draw('same e2z')
     lc_hists[0].Draw('same epz')
     lc_hists[1].Draw('same e2z')
-    h_lambda_30_50_sp.Draw('same epz')
-    h_ks_30_50_sp.Draw('same epz')
+    # h_lambda_30_50_sp.Draw('same epz')
+    # h_ks_30_50_sp.Draw('same epz')
+    h_lambda_30_40_sp.Draw('same epz')
+    h_ks_30_40_sp.Draw('same epz')
     
-    position_x = 0.44
-    legend = TLegend(position_x, 0.53, 0.63, 0.81)
+    position_x = 0.36
+    position_y_top = 0.83
+    legend = TLegend(position_x, position_y_top-0.28, 0.63, position_y_top)
     legend.SetTextSize(legend_TextSize)
     legend.SetTextFont(42)
     legend.AddEntry(lc_hists[0], "Prompt #Lambda_{c}^{+}", "p")
@@ -646,15 +899,17 @@ def compare_with_data(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, do_ncq=False)
     legend.AddEntry("", "", "") 
     # legend.AddEntry(h_lambda_30_50, "#Lambda(#bar{#Lambda}) JHEP 05 (2023) 243", "p")
     # legend.AddEntry(h_ks_30_50, "K_{S}^{0}     JHEP 05 (2023) 243", "p")
-    legend.AddEntry(h_lambda_30_50_sp, "#Lambda(#bar{#Lambda}) JHEP 09 (2018) 006", "p")
-    legend.AddEntry(h_ks_30_50_sp, "K_{S}^{0}     JHEP 09 (2018) 006", "p")
+    # legend.AddEntry(h_lambda_30_50_sp, "#Lambda(#bar{#Lambda}) JHEP 09 (2018) 006", "p")
+    # legend.AddEntry(h_ks_30_50_sp, "K_{S}^{0}     JHEP 09 (2018) 006", "p")
+    legend.AddEntry(h_lambda_30_40_sp, "#Lambda(#bar{#Lambda}) JHEP 09 (2018) 006", "p")
+    legend.AddEntry(h_ks_30_40_sp, "K_{S}^{0}     JHEP 09 (2018) 006", "p")
     legend.SetBorderSize(0)
     legend.Draw("same")
     
-    lat_large.DrawLatex(0.18, 0.83, 'ALICE')
-    lat_mid.DrawLatex(0.18, 0.77, 'Pb#font[122]{-}Pb, 30#font[122]{-}50% ')
-    latLabel.DrawLatex(position_x+0.02, 0.83, "#it{v}_{2} {SP, |#Delta#it{#eta}| > 1.3},  #sqrt{#it{s}_{NN}} = 5.36 TeV")
-    latLabel.DrawLatex(position_x+0.02, 0.66, "#it{v}_{2} {2, |#Delta#it{#eta}| > 2},  #sqrt{#it{s}_{NN}} = 5.02 TeV")
+    lat_large.DrawLatex(0.18, position_y_top+0.02, 'ALICE')
+    lat_mid.DrawLatex(0.18, position_y_top-0.04, 'Pb#font[122]{-}Pb')  # , 30#font[122]{-}50% 
+    latLabel.DrawLatex(position_x+0.01, position_y_top+0.02, "#it{v}_{2} {SP, |#Delta#it{#eta}| > 1.3},  #sqrt{#it{s}_{NN}} = 5.36 TeV, 30#font[122]{-}50%")
+    latLabel.DrawLatex(position_x+0.01, position_y_top-0.15, "#it{v}_{2} {2, |#Delta#it{#eta}| > 2},  #sqrt{#it{s}_{NN}} = 5.02 TeV, 30#font[122]{-}40%")
     canvas.Update()
     canvas.Draw()
     canvas.SaveAs(f'{outDir}/compare-LF.pdf')
@@ -674,34 +929,35 @@ def compare_with_data(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, do_ncq=False)
         outFile.Close()
 
 
-def compare_dataWmodel_ncq(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, do_ket_nq=False):
+def compare_dataWmodel_ncq(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, do_ket_nq=False, logx=False):
     '''compare v2/nq vs kEt/nq(pt/nq) of D0 and Lambda_c with light-flavor hadrons (K0s and Lambda) and models'''
     all_data = compare_with_data(do_ncq=True)
     all_data_scaled = preprocess_ncq(all_data, do_ket_nq=do_ket_nq, ismodel=False)
     columns = ["pt/nq", "v2/nq", "Total Error/nq"]
     if do_ket_nq:
         columns = ["kEt/nq", "v2/nq", "Total Error/nq"]
+    #  Lambda: kOrange+2, K0s: kBlue+1    ROOT.kAzure+2 kMagenta+1
     h_ks_30_50_scaled = fill_graph(all_data_scaled['ks'], columns)
     h_lambda_30_50_scaled = fill_graph(all_data_scaled['lambda'], columns)
-    SetObjectStyle(h_ks_30_50_scaled, color=ROOT.kAzure+1, markerstyle=ROOT.kOpenSquare, linewidth=1)
-    SetObjectStyle(h_lambda_30_50_scaled, color=ROOT.kMagenta, markerstyle=ROOT.kOpenSquare, linewidth=1)
+    SetObjectStyle(h_ks_30_50_scaled, color=ROOT.kBlue+1, markerstyle=ROOT.kOpenCircle, linewidth=1, markersize=1.5)
+    SetObjectStyle(h_lambda_30_50_scaled, color=ROOT.kOrange+2, markerstyle=ROOT.kOpenSquare, linewidth=1, markersize=1.5)
 
     all_model_data = compare_with_model(do_ncq=True)
     all_model_data_scaled = preprocess_ncq(all_model_data, do_ket_nq=do_ket_nq, ismodel=True)
     tamu_band_lc = get_band(all_model_data_scaled["tamu"]["lc"][0].iloc[:,0], all_model_data_scaled["tamu"]["lc"][1].iloc[:,0],
-                         all_model_data_scaled["tamu"]["lc"][0].iloc[:,1], all_model_data_scaled["tamu"]["lc"][1].iloc[:,1], color=color_lc)
+                         all_model_data_scaled["tamu"]["lc"][0].iloc[:,1], all_model_data_scaled["tamu"]["lc"][1].iloc[:,1], color=color_lc, xmin_lim=0.01)
     tamu_band_d0 = get_band(all_model_data_scaled["tamu"]["d0"][0].iloc[:,0], all_model_data_scaled["tamu"]["d0"][1].iloc[:,0],
-                         all_model_data_scaled["tamu"]["d0"][0].iloc[:,1], all_model_data_scaled["tamu"]["d0"][1].iloc[:,1], color=color_d0)
+                         all_model_data_scaled["tamu"]["d0"][0].iloc[:,1], all_model_data_scaled["tamu"]["d0"][1].iloc[:,1], color=color_d0, xmin_lim=0.01)
     catania_band_lc = get_band(all_model_data_scaled["catania"]["lc"][0].iloc[:,0], all_model_data_scaled["catania"]["lc"][0].iloc[:,0],
-                         all_model_data_scaled["catania"]["lc"][0].iloc[:,1], all_model_data_scaled["catania"]["lc"][0].iloc[:,2], color=color_lc)
+                         all_model_data_scaled["catania"]["lc"][0].iloc[:,1], all_model_data_scaled["catania"]["lc"][0].iloc[:,2], color=color_lc, xmin_lim=0.01)
     catania_band_d0 = get_band(all_model_data_scaled["catania"]["d0"][0].iloc[:,0], all_model_data_scaled["catania"]["d0"][0].iloc[:,0],
-                         all_model_data_scaled["catania"]["d0"][0].iloc[:,1], all_model_data_scaled["catania"]["d0"][0].iloc[:,2], color=color_d0)
-    tamu_band_lc.SetFillColorAlpha(colors_lc["tamu"], 0.5)
+                         all_model_data_scaled["catania"]["d0"][0].iloc[:,1], all_model_data_scaled["catania"]["d0"][0].iloc[:,2], color=color_d0, xmin_lim=0.01)
+    tamu_band_lc.SetFillColorAlpha(colors_lc["tamu"], 0.4)
     tamu_band_d0.SetFillColorAlpha(colors_d0["tamu"], 0.4)
     # tamu_band_lc.SetFillStyle(3002) 
     # tamu_band_d0.SetFillStyle(3002) 
-    catania_band_lc.SetFillColorAlpha(colors_lc["catania"], 0.3)
-    catania_band_d0.SetFillColorAlpha(colors_d0["catania"], 0.8)
+    catania_band_lc.SetFillColorAlpha(colors_lc["catania"], 0.5)
+    catania_band_d0.SetFillColorAlpha(colors_d0["catania"], 0.5)
 
     graph_lc_Langevin_fnwsnloaver = ROOT.TGraph(len(all_model_data_scaled["langevin"]["lc"][0].iloc[:,0]), 
                                                 array.array('d', all_model_data_scaled["langevin"]["lc"][0].iloc[:,0]), 
@@ -764,31 +1020,41 @@ def compare_dataWmodel_ncq(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, do_ket_n
     graph_d0_epos4hq.SetLineColor(colors_d0["epos4hq"])
     graph_d0_epos4hq.SetLineWidth(3)
     graph_d0_epos4hq.SetLineStyle(3)
-    result_nq = f'../input-data/lc-d0-data/usekEt_{do_ket_nq}-test-syst.root'
+    # result_nq = f'../input-data/lc-d0-data/usekEt_{do_ket_nq}-test-syst.root'
     # d0_hists = read_hists(result_nq, markerstyle=ROOT.kFullCircle, colors=[ROOT.kBlue], gname=['d0_hist_prompt', 'gVnPromptSystTot-d0'])
     # lc_hists = read_hists(result_nq, markerstyle=ROOT.kFullCircle, colors=[ROOT.kRed], gname=['hist_prompt_all', 'gVnPromptSystTot-All'])
-    file = TFile.Open(result_nq)
-    if not file:
-        print('error: faild to open file')
-        return
-    d0_h_prompt_cent = file.Get('d0_hist_prompt')
-    SetObjectStyle(d0_h_prompt_cent, color=color_d0, markerstyle=ROOT.kFullCircle, linewidth=1, fillalpha=0.2)
-    d0_h_prompt_systtot = file.Get('gVnPromptSystTot-d0')
-    SetObjectStyle(d0_h_prompt_systtot, color=color_d0)
-    d0_h_prompt_systtot.SetFillStyle(0)
-    d0_h_prompt_systtot.SetLineWidth(1)
+    # file = TFile.Open(result_nq)
+    # if not file:
+    #     print('error: faild to open file')
+    #     return
+    # d0_h_prompt_cent = file.Get('d0_hist_prompt')
+    # SetObjectStyle(d0_h_prompt_cent, color=color_d0, markerstyle=ROOT.kFullCircle, linewidth=1, fillalpha=0.2)
+    # d0_h_prompt_systtot = file.Get('gVnPromptSystTot-d0')
+    # SetObjectStyle(d0_h_prompt_systtot, color=color_d0)
+    # d0_h_prompt_systtot.SetFillStyle(0)
+    # d0_h_prompt_systtot.SetLineWidth(1)
 
-    lc_h_prompt_cent = file.Get('hist_prompt_all')
-    SetObjectStyle(lc_h_prompt_cent, color=color_lc, markerstyle=ROOT.kFullCircle, linewidth=1)  #  linealpha=0.8
-    lc_h_prompt_systtot = file.Get('gVnPromptSystTot-All')
-    SetObjectStyle(lc_h_prompt_systtot, color=color_lc)
-    lc_h_prompt_systtot.SetFillStyle(0)
-    lc_h_prompt_systtot.SetLineWidth(1)
+    # lc_h_prompt_cent = file.Get('hist_prompt_all')
+    # SetObjectStyle(lc_h_prompt_cent, color=color_lc, markerstyle=ROOT.kFullCircle, linewidth=1)  #  linealpha=0.8
+    # lc_h_prompt_systtot = file.Get('gVnPromptSystTot-All')
+    # SetObjectStyle(lc_h_prompt_systtot, color=color_lc)
+    # lc_h_prompt_systtot.SetFillStyle(0)
+    # lc_h_prompt_systtot.SetLineWidth(1)
 
-    d0_hists = [d0_h_prompt_cent, d0_h_prompt_systtot]
-    lc_hists = [lc_h_prompt_cent, lc_h_prompt_systtot]
-    canvas = ROOT.TCanvas("canvas", "Canvas", 2400, 800)
-    canvas.Divide(3, 1, 0, 0)
+    # d0_hists = [d0_h_prompt_cent, d0_h_prompt_systtot]
+    # lc_hists = [lc_h_prompt_cent, lc_h_prompt_systtot]
+    global d0_hists, lc_hists 
+    d0_hists = preprocess_graph_ncq('d0', d0_hists, do_ket_nq=True, is_model=False)
+    lc_hists = preprocess_graph_ncq('lc', lc_hists, do_ket_nq=True, is_model=False)
+    SetObjectStyle(d0_hists[0], color=color_d0, markerstyle=ROOT.kFullCircle, linewidth=2, markersize=1.5)
+    SetObjectStyle(d0_hists[1], color=color_d0, linewidth=2, fillstyle=0)
+    SetObjectStyle(lc_hists[0], color=color_lc, markerstyle=ROOT.kFullSquare, linewidth=2, markersize=1.5)
+    SetObjectStyle(lc_hists[1], color=color_lc, linewidth=2, fillstyle=0)
+    scale_x_errors(d0_hists[1], target_graph=d0_hists[0], scale_factor=0.6)
+    scale_x_errors(lc_hists[1], target_graph=lc_hists[0], scale_factor=0.6)
+    
+    canvas = ROOT.TCanvas("canvas", "Canvas", 1600, 800)
+    canvas.Divide(2, 1, 0, 0)
     x_label = "#it{p}_{T}/#it{n}_{q}"
     x_min = 0.2
     x_max = 12+0.5
@@ -796,12 +1062,20 @@ def compare_dataWmodel_ncq(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, do_ket_n
     if do_ket_nq:
         x_max = 11.9
         x_min = -0.15
-        x_label = "kE_{T}/#it{n}_{q}"
-    y_label = "#it{v}_{2}/#it{n}_{q}"
+        if logx:
+            x_min = 0.029
+        x_label = "kE_{T} /#it{n}_{q}"
+    y_label = "#it{v}_{2} /#it{n}_{q}"
     pad_left = canvas.cd(1)
-    frame = pad_left.DrawFrame(x_min, -0.0, x_max, y_max,
+    if logx:
+        pad_left.SetLogx()
+    frame = pad_left.DrawFrame(x_min, 0.0, x_max, y_max,
                             f';{x_label} (GeV/#it{{c}})  ;{y_label}')
     frame.GetYaxis().SetDecimals()
+    frame.GetXaxis().SetLabelSize(0.045) 
+    frame.GetYaxis().SetLabelSize(0.045)  
+    frame.GetYaxis().SetTitleOffset(1.3)
+    # frame.GetXaxis().SetTitleSize(0)
     d0_hists[0].Draw('same epz')
     d0_hists[1].Draw('same e2z')
     lc_hists[0].Draw('same epz')
@@ -813,42 +1087,54 @@ def compare_dataWmodel_ncq(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, do_ket_n
     lat_large, lat_mid, latLabel = get_latex()
     legend_TextSize = latLabel.GetTextSize()
 
-    position_x = 0.45
-    position_y_top = 0.9
+    position_x = 0.28
+    position_y_top = 0.92
     position_y_bottom = position_y_top-0.3
-    legend = TLegend(position_x, position_y_bottom-0.05, position_x+0.2, position_y_top-0.02)
+    legend = TLegend(position_x+0.04, position_y_bottom-0.02, position_x+0.2, position_y_top-0.02)
+    if logx:
+        legend = TLegend(position_x+0.04, position_y_bottom+0.16, position_x+0.2, position_y_top-0.02)
     legend.SetTextSize(legend_TextSize)
     legend.SetTextFont(42)
-    legend.AddEntry(lc_hists[0], "Prompt #Lambda_{c}^{+}", "p")
-    legend.AddEntry(d0_hists[0], "Prompt D^{0}", "p")
-    legend.AddEntry("", "", "")
-    legend.AddEntry("", "", "")
+    if not logx:
+        legend.AddEntry(lc_hists[0], "Prompt #Lambda_{c}^{+}", "p")
+        legend.AddEntry(d0_hists[0], "Prompt D^{0}", "p")
+        legend.AddEntry("", "", "")
+        # legend.AddEntry("", "", "")
 
-    legend.AddEntry(h_ks_30_50_scaled, "K_{S}^{0}     JHEP 09 (2018) 006", "p")
     legend.AddEntry(h_lambda_30_50_scaled, "#Lambda(#bar{#Lambda}) JHEP 09 (2018) 006", "p")
+    legend.AddEntry(h_ks_30_50_scaled, "K_{S}^{0}     JHEP 09 (2018) 006", "p")
     legend.SetBorderSize(0)
     legend.Draw("same")
 
-    lat_large.DrawLatex(0.2, position_y_top, 'ALICE')
-    lat_mid.DrawLatex(0.2, position_y_top-0.06, 'Pb#font[122]{-}Pb, 30#font[122]{-}50%')
-    latLabel.DrawLatex(position_x+0.03, position_y_top, "#it{v}_{2} {SP, |#Delta#it{#eta}| > 1.3},  #sqrt{#it{s}_{NN}} = 5.36 TeV")
-    latLabel.DrawLatex(position_x+0.03, position_y_top-0.21, "#it{v}_{2} {2, |#Delta#it{#eta}| > 2},  #sqrt{#it{s}_{NN}} = 5.02 TeV")
+    lat_large.DrawLatex(position_x-0.11, position_y_top, 'ALICE')
+    lat_mid.DrawLatex(position_x-0.11, position_y_top-0.06, 'Pb#font[122]{-}Pb')  # , 30#font[122]{-}50%
+    if not logx:
+        latLabel.DrawLatex(position_x+0.03, position_y_top, "#it{v}_{2} {SP, |#Delta#it{#eta}| > 1.3},  #sqrt{#it{s}_{NN}} = 5.36 TeV, 30#font[122]{-}50%")
+        latLabel.DrawLatex(position_x+0.03, position_y_top-0.18, "#it{v}_{2} {2, |#Delta#it{#eta}| > 2},  #sqrt{#it{s}_{NN}} = 5.02 TeV, 30#font[122]{-}40%")
+    if logx:
+        latLabel.DrawLatex(position_x+0.03, position_y_top-0., "#it{v}_{2} {2, |#Delta#it{#eta}| > 2},  #sqrt{#it{s}_{NN}} = 5.02 TeV, 30#font[122]{-}40%")
     pad_mid = canvas.cd(2)
-    frame = pad_mid.DrawFrame(x_min, -0.0, x_max, y_max,
+    if logx:
+        pad_mid.SetLogx()
+    frame = pad_mid.DrawFrame(x_min, 0.0, x_max, y_max,
                             f';{x_label} (GeV/#it{{c}})  ;{y_label}')
+    frame.GetXaxis().SetLabelSize(0.045) 
+    frame.GetYaxis().SetLabelSize(0.045) 
     position_x = 0.22
     tamu_band_lc.Draw('F')
     tamu_band_d0.Draw('F')
-    graph_lc_htl.Draw('same')
-    graph_d0_htl.Draw('same')
-    graph_lc_lat.Draw('same')
-    graph_d0_lat.Draw('same')
+    # graph_lc_htl.Draw('same')
+    # graph_d0_htl.Draw('same')
+    # graph_lc_lat.Draw('same')
+    # graph_d0_lat.Draw('same')
     d0_hists[0].Draw('same epz')
     d0_hists[1].Draw('same e2z')
     lc_hists[0].Draw('same epz')
     lc_hists[1].Draw('same e2z')
     
-    legend_m = TLegend(position_x-0.11, position_y_bottom+0.08, position_x+0.75, position_y_top-0.03)
+    legend_m = TLegend(position_x-0.11, position_y_bottom+0.2, position_x+0.75, position_y_top-0.03)
+    if logx:
+        legend_m = TLegend(position_x-0.11, position_y_bottom+0.1, position_x+0.75, position_y_top-0.01)
     legend_m.SetFillStyle(0)
     legend_m.SetBorderSize(0)
     legend_m.SetNColumns(2)
@@ -856,47 +1142,56 @@ def compare_dataWmodel_ncq(color_lc=ROOT.kRed+2, color_d0=ROOT.kBlue+2, do_ket_n
     legend_m.SetTextSize(legend_TextSize)
     legend_m.SetTextFont(42)
     
-    legend_m.AddEntry(graph_lc_htl, "POWLANG HTL #Lambda_{c}^{+}", "l")
-    legend_m.AddEntry(graph_d0_htl, "POWLANG HTL D^{0}", "l")
-    legend_m.AddEntry(graph_lc_lat, "POWLANG lQCD #Lambda_{c}^{+}", "l")
-    legend_m.AddEntry(graph_d0_lat, "POWLANG lQCD D^{0}", "l")
+    # legend_m.AddEntry(graph_lc_htl, "POWLANG HTL #Lambda_{c}^{+}", "l")
+    # legend_m.AddEntry(graph_d0_htl, "POWLANG HTL D^{0}", "l")
+    # legend_m.AddEntry(graph_lc_lat, "POWLANG lQCD #Lambda_{c}^{+}", "l")
+    # legend_m.AddEntry(graph_d0_lat, "POWLANG lQCD D^{0}", "l")
+    if logx:
+        legend_m.AddEntry(lc_hists[0], "Prompt #Lambda_{c}^{+}", "p")
+        legend_m.AddEntry(d0_hists[0], "Prompt D^{0}", "p")
+        legend_m.AddEntry("", "", "")
+        legend_m.AddEntry("", "", "")
+    
     legend_m.AddEntry(tamu_band_lc, "TAMU #Lambda_{c}^{+}", "F")
     legend_m.AddEntry(tamu_band_d0, "TAMU D^{0}", "F")
+    if logx:
+        latLabel.DrawLatex(position_x-0.1, position_y_top, "#it{v}_{2} {SP, |#Delta#it{#eta}| > 1.3},  #sqrt{#it{s}_{NN}} = 5.36 TeV, 30#font[122]{-}50%")
+        latLabel.DrawLatex(position_x-0.1, position_y_top-0.11, "Transport models,  #sqrt{#it{s}_{NN}} = 5.02 TeV")
+    else:
+        latLabel.DrawLatex(position_x-0.1, position_y_top, "Transport models,  #sqrt{#it{s}_{NN}} = 5.02 TeV")
+    # pad_right = canvas.cd(3)
+    # frame = pad_right.DrawFrame(x_min, -0.0, x_max, y_max,
+    #                         f';{x_label} (GeV/#it{{c}})  ;{y_label}')
+    # catania_band_lc.Draw('F')
+    # catania_band_d0.Draw('F')
+    # graph_lc_lbt.Draw('same')
+    # graph_d0_lbt.Draw('same')
+    # graph_lc_Langevin_fnwsnloaver.Draw('same')
+    # graph_d0_Langevin_fnwsnloaver.Draw('same')
+    # graph_lc_epos4hq.Draw('same')
+    # graph_d0_epos4hq.Draw('same')
+    # d0_hists[0].Draw('same epz')
+    # d0_hists[1].Draw('same e2z')
+    # lc_hists[0].Draw('same epz')
+    # lc_hists[1].Draw('same e2z')
     
-    latLabel.DrawLatex(position_x-0.1, position_y_top, "Transport models,  #sqrt{#it{s}_{NN}} = 5.02 TeV")
-    pad_right = canvas.cd(3)
-    frame = pad_right.DrawFrame(x_min, -0.0, x_max, y_max,
-                            f';{x_label} (GeV/#it{{c}})  ;{y_label}')
-    catania_band_lc.Draw('F')
-    catania_band_d0.Draw('F')
-    graph_lc_lbt.Draw('same')
-    graph_d0_lbt.Draw('same')
-    graph_lc_Langevin_fnwsnloaver.Draw('same')
-    graph_d0_Langevin_fnwsnloaver.Draw('same')
-    graph_lc_epos4hq.Draw('same')
-    graph_d0_epos4hq.Draw('same')
-    d0_hists[0].Draw('same epz')
-    d0_hists[1].Draw('same e2z')
-    lc_hists[0].Draw('same epz')
-    lc_hists[1].Draw('same e2z')
+    # legend_r = TLegend(position_x-0.05, position_y_bottom+0.04, position_x+0.73, position_y_top-0.03)
+    # legend_r.SetFillStyle(0)
+    # legend_r.SetBorderSize(0)
+    # legend_r.SetNColumns(2)
+    # legend_r.Draw("same")
+    # legend_r.SetTextSize(legend_TextSize)
+    # legend_r.SetTextFont(42)
+    # legend_r.AddEntry(graph_lc_epos4hq, "EPOS4HQ #Lambda_{c}^{+}", "l")
+    # legend_r.AddEntry(graph_d0_epos4hq, "EPOS4HQ D^{0}", "l")
+    # legend_r.AddEntry(graph_lc_lbt, "LBT-PNP #Lambda_{c}^{+}", "l")
+    # legend_r.AddEntry(graph_d0_lbt, "LBT-PNP D^{0}", "l")
+    # legend_r.AddEntry(graph_lc_Langevin_fnwsnloaver, "Langevin #Lambda_{c}^{+}", "l")
+    # legend_r.AddEntry(graph_d0_Langevin_fnwsnloaver, "Langevin D^{0}", "l")
+    # legend_r.AddEntry(catania_band_lc, "Catania #Lambda_{c}^{+}", "F")
+    # legend_r.AddEntry(catania_band_d0, "Catania D^{0}", "F")
     
-    legend_r = TLegend(position_x-0.05, position_y_bottom+0.04, position_x+0.73, position_y_top-0.03)
-    legend_r.SetFillStyle(0)
-    legend_r.SetBorderSize(0)
-    legend_r.SetNColumns(2)
-    legend_r.Draw("same")
-    legend_r.SetTextSize(legend_TextSize)
-    legend_r.SetTextFont(42)
-    legend_r.AddEntry(graph_lc_epos4hq, "EPOS4HQ #Lambda_{c}^{+}", "l")
-    legend_r.AddEntry(graph_d0_epos4hq, "EPOS4HQ D^{0}", "l")
-    legend_r.AddEntry(graph_lc_lbt, "LBT-PNP #Lambda_{c}^{+}", "l")
-    legend_r.AddEntry(graph_d0_lbt, "LBT-PNP D^{0}", "l")
-    legend_r.AddEntry(graph_lc_Langevin_fnwsnloaver, "Langevin #Lambda_{c}^{+}", "l")
-    legend_r.AddEntry(graph_d0_Langevin_fnwsnloaver, "Langevin D^{0}", "l")
-    legend_r.AddEntry(catania_band_lc, "Catania #Lambda_{c}^{+}", "F")
-    legend_r.AddEntry(catania_band_d0, "Catania D^{0}", "F")
-    
-    latLabel.DrawLatex(position_x-0.04, position_y_top, "Transport models,  #sqrt{#it{s}_{NN}} = 5.02 TeV")
+    # latLabel.DrawLatex(position_x-0.04, position_y_top, "Transport models,  #sqrt{#it{s}_{NN}} = 5.02 TeV")
     canvas.Update()
     canvas.Draw()
     canvas.SaveAs(f'{outDir}/ncq.pdf')
@@ -993,7 +1288,7 @@ def plot_performance(plot_invmass_fit = True, plot_v2ffd_fit = True, plot_cutvar
 
         # Axis titles for bottom and top subplots
         # Bottom subplot: Invariant mass vs observed v2
-        axisnamebottoms = [';#it{M}(pK#pi) (GeV/#it{c}^{2});#it{v}_{2}^{obs.} {SP, |#Delta#it{#eta}| > 1.3}',
+        axisnamebottoms = [';#it{M}(pK#pi) (GeV/#it{c}^{2});#it{v}_{2}^{tot.} {SP, |#Delta#it{#eta}| > 1.3}',
                         ]
         # Top subplot: Invariant mass vs counts (bin width dynamically calculated)
         axisnametops = [f';#it{{M}}(pK#pi) (GeV/#it{{c}}^{{2}});Counts per {hInvMassD0.GetBinWidth(1)*1000:.0f} MeV/#it{{c}}^{{2}}',]
@@ -1060,13 +1355,13 @@ def plot_performance(plot_invmass_fit = True, plot_v2ffd_fit = True, plot_cutvar
         if not one_p:
             if number == '00':
                 latexdetail2.DrawLatexNDC(x_, topy, '0 < BDT score to be prompt < 0.03')  # BDT score range for prompt particles
-                latexdetail2.DrawLatexNDC(x_, topy - gap, '#it{v}_{2}^{obs.} = 0.012 #pm 0.051')  # Observed v2 with uncertainty
+                latexdetail2.DrawLatexNDC(x_, topy - gap, '#it{v}_{2}^{sig.} = 0.012 #pm 0.051')  # Observed v2 with uncertainty
             elif number == '01':
                 latexdetail2.DrawLatexNDC(x_, topy, '0.03 < BDT score to be prompt < 0.8')
-                latexdetail2.DrawLatexNDC(x_, topy - gap, '#it{v}_{2}^{obs.} = 0.146 #pm 0.051')
+                latexdetail2.DrawLatexNDC(x_, topy - gap, '#it{v}_{2}^{sig.} = 0.146 #pm 0.051')
             elif number == '02':
                 latexdetail2.DrawLatexNDC(x_, topy, '0.8 < BDT score to be prompt < 1')
-                latexdetail2.DrawLatexNDC(x_, topy - gap, '#it{v}_{2}^{obs.} = 0.186 #pm 0.027')
+                latexdetail2.DrawLatexNDC(x_, topy - gap, '#it{v}_{2}^{sig.} = 0.186 #pm 0.027')
 
     #_____________________________________________________________________________________
     # --------------------------
@@ -1134,20 +1429,27 @@ def plot_performance(plot_invmass_fit = True, plot_v2ffd_fit = True, plot_cutvar
         cutvar_hframe = frames[1]
         
         cutvar_hframe.GetYaxis().SetNoExponent(False) 
-        cutvar_hframe.GetXaxis().SetLabelSize(0)
+        # cutvar_hframe.GetXaxis().SetLabelSize(0)
         cutvar_hframe.GetYaxis().SetRangeUser(0, 16e3)
         y_pos = 0  # Vertical position of the custom x-axis (aligned to the bottom of the subplot)
 
         # Create a custom x-axis (TGaxis) to replace the default frame axis (for precise range control)
-        custom_x_axis = ROOT.TGaxis(
-            0.5, y_pos, 20.5, y_pos,    # Axis drawing range: from (x=0.5, y=y_pos) to (x=20.5, y=y_pos) (canvas coordinates)
-            -0.0005, 0.0195,            # Data range of the axis (matches the cut parameter range of the histograms)
-            505,                        # Tick mark configuration: 5 major ticks, 0 minor ticks, optimization flag 5
-            "L"                         # Label position: draw labels on the "Left" (bottom) side of the axis
-        )
-        custom_x_axis.SetLabelFont(42)
-        custom_x_axis.SetLabelSize(0.05)
-        custom_x_axis.Draw("same")                    # Draw the custom x-axis on top of the subplot
+        # custom_x_axis = ROOT.TGaxis(
+        #     0.5, y_pos, 20.5, y_pos,    # Axis drawing range: from (x=0.5, y=y_pos) to (x=20.5, y=y_pos) (canvas coordinates)
+        #     -0.0005, 0.0195,            # Data range of the axis (matches the cut parameter range of the histograms)
+        #     505,                        # Tick mark configuration: 5 major ticks, 0 minor ticks, optimization flag 5
+        #     "L"                         # Label position: draw labels on the "Left" (bottom) side of the axis
+        # )
+        # data_points = [0.0, 0.00021, 0.00041, 0.00061, 0.00081, 0.001, 0.0014, 0.0018, 0.0022, 0.0026, 0.0032, 0.0038, 0.0046, 0.0054, 0.0064, 0.0076, 0.009, 0.01, 0.012, 0.014]
+        # custom_x_axis.SetNdivisions(20)  # 设置 20 个主刻度
+        # # 自定义刻度标签
+        # for i in range(len(data_points)):
+        #     # 设置每个刻度位置对应的标签
+        #     custom_x_axis.ChangeLabel(i, -1, -1, -1, -1, -1, f"{data_points[i]:.5f}")
+        
+        # custom_x_axis.SetLabelFont(42)
+        # custom_x_axis.SetLabelSize(0.05)
+        # custom_x_axis.Draw("same")                    # Draw the custom x-axis on top of the subplot
 
         # - Font size matches other legends (legsize = 0.045)
         legDistr_cutvar = ROOT.TLegend(px2, 0.5, 0.8, topy+0.05)
@@ -1171,34 +1473,69 @@ def plot_performance(plot_invmass_fit = True, plot_v2ffd_fit = True, plot_cutvar
 
 if __name__ == "__main__":
     global colors_lc, colors_d0, d0_hists, lc_hists, outDir, debug
-    color_lc = ROOT.TColor.GetColor("#CD5C5C")
-    color_d0 = ROOT.kBlue + 2
+    color_lc = ROOT.TColor.GetColor("#CD5C5C")+1
+    color_d0 = ROOT.kBlue + 3
+    # Lc: kRed+1, D+: kOrange+2, Ds: kGreen+2, and D0: kAzure+4
+    color_lc = ROOT.kRed+1
+    color_d0 = ROOT.kAzure+4
     colors_lc = {"langevin":ROOT.kRed+2, "htl":ROOT.kRed+1, "latQCD":ROOT.kOrange+1, "lbt":ROOT.kP10Brown,
-                "tamu":ROOT.kP8Pink, "catania":ROOT.kMagenta, "epos4hq":ROOT.TColor.GetColor("#8B0000")}
+                # "tamu":ROOT.kP8Pink, "catania":ROOT.kMagenta, "epos4hq":ROOT.TColor.GetColor("#8B0000")}
+                "tamu":ROOT.kRed+1, "catania":ROOT.kMagenta, "epos4hq":ROOT.TColor.GetColor("#8B0000")}
     colors_d0 = {"langevin":ROOT.kBlue+2, "htl":ROOT.kCyan+2, "latQCD":ROOT.kP10Green, "lbt":ROOT.kP10Violet,
-                "tamu":ROOT.kBlue+2, "catania":ROOT.kAzure+1, "epos4hq":ROOT.TColor.GetColor("#4169E1")}
-    outDir = '.'
-    d0_file_path = '../input-data/lc-d0-data/d0-promptvn_withsysttest.root'
-    d0_hists = read_hists(d0_file_path, ROOT.kFullCircle, colors=[color_d0], markersize=2)  # ROOT.kOpenSquare
-    lc_file_path = '../input-data/lc-d0-data/lc-prompt-allpt-wTotsyst.root'
+                # "tamu":ROOT.kBlue+2, "catania":ROOT.kAzure+1, "epos4hq":ROOT.TColor.GetColor("#4169E1")}
+                "tamu":ROOT.kAzure+4, "catania":ROOT.kAzure+1, "epos4hq":ROOT.TColor.GetColor("#4169E1")}
+    
+    # colors_lc = {
+    # "langevin": ROOT.TColor.GetColorTransparent(ROOT.kRed+1, 0.6),        # 深红色
+    # "htl": ROOT.TColor.GetColorTransparent(ROOT.kGreen+3, 0.6),           # 深绿色
+    # "latQCD": ROOT.TColor.GetColorTransparent(ROOT.kSpring+5, 0.8),       # 深橙色/棕色
+    # "lbt": ROOT.TColor.GetColorTransparent(ROOT.kOrange+1, 0.6),          # 黄绿色
+    # "tamu": ROOT.TColor.GetColorTransparent(ROOT.kAzure+4, 0.6),           # 保持不变
+    # "catania": ROOT.TColor.GetColorTransparent(ROOT.kBlue+2, 0.6),       # 保持不变
+    # "epos4hq": ROOT.TColor.GetColorTransparent(ROOT.kP8Pink, 0.6)        # 深粉色
+    # }
+    colors_d0 = {
+    "langevin": ROOT.TColor.GetColorTransparent(ROOT.kRed+1, 0.6),        # 深红色
+    "htl": ROOT.TColor.GetColorTransparent(ROOT.kGreen+3, 0.6),           # 深绿色
+    "latQCD": ROOT.TColor.GetColorTransparent(ROOT.kSpring+5, 0.8),       # 深橙色/棕色
+    "lbt": ROOT.TColor.GetColorTransparent(ROOT.kOrange+1, 0.6),          # 黄绿色
+    "tamu": ROOT.TColor.GetColorTransparent(ROOT.kAzure+4, 0.6),           # 保持不变
+    "catania": ROOT.TColor.GetColorTransparent(ROOT.kBlue+1, 0.1),       # 保持不变
+    "epos4hq": ROOT.TColor.GetColorTransparent(ROOT.kP8Pink, 0.6)        # 深粉色
+    }
+
+    outDir = '../output'
+    # d0_file_path = '../input-data/lc-d0-data/d0-promptvn_withsysttest.root'
+    d0_file_path = '../input-data/lc-d0-data/v2_prompt_wsyst_D0_3050_finer.root'
+    d0_hists = read_hists(d0_file_path, ROOT.kFullCircle, colors=[color_d0], markersize=2, 
+                          gname=['gvn_prompt_stat', 'tot_syst'])  # ROOT.kOpenSquare
+    scale_x_errors(d0_hists[1], target_graph=d0_hists[0], scale_factor=0.6)
+    lc_file_path = '../input-data/lc-d0-data/merged-lc-promptvn_withsyst_r2-0.2%.root'
+    # lc_file_path = '../input-data/lc-d0-data/lc-prompt-allpt-wTotsyst.root'
     lc_hists = read_hists(lc_file_path, ROOT.kFullSquare, colors=[color_lc], markersize=2)  # ROOT.kOpenSquare
     debug = False
     # debug = True
-    plot_performance()
-    compare_with_data(color_lc=color_lc, color_d0=color_d0)
-    compare_dataWmodel_ncq(color_lc=color_lc, color_d0=color_d0, do_ket_nq=True)  # true:ket/nq;
-    compare_dataWmodel_ncq(color_lc=color_lc, color_d0=color_d0, do_ket_nq=False)  # false:pt/nq;
-    d0_hists = read_hists(d0_file_path, ROOT.kFullCircle, colors=[color_d0], markersize=2)  # ROOT.kOpenSquare
-    lc_hists = read_hists(lc_file_path, ROOT.kFullSquare, colors=[color_lc], markersize=2)  # ROOT.kOpenSquare
-    compare_allD(color_lc=color_lc, color_d0=color_d0)
-    compare_allD(color_lc=color_lc, color_d0=color_d0, no_J_Psi=True)
-    compare_allD(color_lc=color_lc, color_d0=color_d0, no_Tamu=True)
+    # compare_with_data(color_lc=color_lc, color_d0=color_d0)
+    # d0_hists = read_hists(d0_file_path, ROOT.kFullCircle, colors=[color_d0], markersize=2, gname=['gvn_prompt_stat', 'tot_syst'])  # ROOT.kOpenSquare
+    # lc_hists = read_hists(lc_file_path, ROOT.kFullSquare, colors=[color_lc], markersize=2)  # ROOT.kOpenSquare
+    # scale_x_errors(d0_hists[1], target_graph=d0_hists[0], scale_factor=0.6)
+    # compare_allD(color_lc=color_lc, color_d0=color_d0)
+    # compare_allD(color_lc=color_lc, color_d0=color_d0, no_J_Psi=True)
+    # compare_allD(color_lc=color_lc, color_d0=color_d0, no_Tamu=True)
+    # compare_allD(color_lc=color_lc, color_d0=color_d0, no_Tamu=True, no_J_Psi=True)
+    # compare_dataWmodel_ncq(color_lc=color_lc, color_d0=color_d0, do_ket_nq=True)  # true:ket/nq;false:pt/nq;
     # black
     color_lc = ROOT.kBlack
     color_d0 = ROOT.kBlack
-    d0_hists = read_hists(d0_file_path, ROOT.kFullCircle, colors=[color_d0], markersize=2)  # ROOT.kOpenSquare
-    lc_hists = read_hists(lc_file_path, ROOT.kFullSquare, colors=[color_lc], markersize=2)  # ROOT.kOpenSquare
+    d0_hists = read_hists(d0_file_path, ROOT.kFullCircle, colors=[color_d0], markersize=2, gname=['gvn_prompt_stat', 'tot_syst'])  # ROOT.kOpenSquare
+    lc_hists = read_hists(lc_file_path, ROOT.kFullSquare, colors=[color_lc], markersize=2, gname=['gvn_prompt_stat', 'tot_syst'])  # ROOT.kOpenSquare
+    scale_x_errors(d0_hists[1], target_graph=d0_hists[0], scale_factor=0.6)
     compare_with_model(color_lc=color_lc, color_d0=color_d0)
-    pdf_paths = ['ncq.pdf', 'compare-model.pdf', 'performance.pdf', 'compare-LF.pdf', 'LcVsAllD_wTamu.pdf', 'LcVsAllD_woTamu.pdf', 'LcVsAllD_wTamu_woJpsi.pdf']
-    pdf2eps_imagemagick(pdf_paths, target_format='png')
+    # plot_performance()
+    
+    pdf_paths = ['ncq.pdf', 'compare-model.pdf', 'performance.pdf', 'compare-LF.pdf', 'LcVsAllD_wTamu.pdf', 'LcVsAllD_woTamu.pdf', 'LcVsAllD_wTamu_woJpsi.pdf', 'LcVsAllD_woJpsi_woTamu.pdf']
+    # pdf_paths = ['compare-model.pdf']
+    pdf_paths = ['ncq.pdf']
+    pdf_paths = [f'{outDir}/{pdf_paths}' for pdf_paths in pdf_paths]
+    # pdf2eps_imagemagick(pdf_paths, target_format='png')
     print("Done!")

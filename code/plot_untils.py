@@ -9,6 +9,44 @@ import sys
 import os
 import subprocess
 from ROOT import TFile, gROOT, TGaxis, gStyle
+import builtins
+from functools import wraps
+
+
+def no_print_decorator(forbid_mode="silent"):
+    """
+    Decorator to disable print statements within a function (fixes __builtins__ dictionary attribute errors)
+    Parameters:
+        forbid_mode: "silent" (silently disable, no output) or "strict" (strictly forbid, raise error)
+    """
+    def decorator(func):
+        @wraps(func)  # Preserve original function metadata (name, docstring, etc.)
+        def wrapper(*args, **kwargs):
+            # 1. Save the original built-in print function (obtained via builtins module for environment compatibility)
+            original_print = builtins.print
+            
+            # 2. Define the replacement print function based on forbidden mode
+            if forbid_mode == "silent":
+                # Silent mode: print calls perform no operation
+                def replaced_print(*args, **kwargs):
+                    pass
+            elif forbid_mode == "strict":
+                # Strict mode: print calls raise a permission error
+                def replaced_print(*args, **kwargs):
+                    raise PermissionError("Print statements are forbidden in this function! Please remove print statements.")
+            else:
+                raise ValueError("forbid_mode only supports 'silent' or 'strict' modes")
+            
+            try:
+                # 3. Temporarily replace built-in print with custom function
+                builtins.print = replaced_print
+                # 4. Execute the original function (print statements inside are now replaced)
+                return func(*args, **kwargs)
+            finally:
+                # 5. Force restore original print (ensures global environment isn't polluted, regardless of errors)
+                builtins.print = original_print
+        return wrapper
+    return decorator
 
 
 def SetGlobalStyle(**kwargs):
@@ -304,49 +342,6 @@ def GetV2HistAndFit(infile, dir, ptmin, ptmax, nbin, hasfeflections=False):
     return gv2, hV2VsFrac, tf1
 
 
-def GetCanvas4sub(name, xmins, xmaxs, ymins_mass, ymaxs_mass, ymins_v2, ymaxs_v2, axisnametop, axisnamebottom):
-    """
-    Creates a canvas with 4 adjacent subpads (one for mass on left top, one for v2 on left bottom
-    one for cut_variation on right top, one for v2 vs FD fraction on right bottom),
-    sharing the x-axis while maintaining different y-axis ranges.
-
-    Args:
-        name (str): Name of the canvas.
-        xmins (float): Minimum x-axis value (common for both pads).
-        xmaxs (float): Maximum x-axis value (common for both pads).
-        ymins_mass (float): Minimum y-axis value for the mass panel.
-        ymaxs_mass (float): Maximum y-axis value for the mass panel.
-        ymins_v2 (float): Minimum y-axis value for the v2 panel.
-        ymaxs_v2 (float): Maximum y-axis value for the v2 panel.
-        axisnametop (str): Y-axis title for the mass plot.
-        axisnamebottom (str): Y-axis title for the v2 plot.
-
-    Returns:
-        tuple: (canvas, frames)
-    """
-    # Create canvas with 2 rows (top = mass, bottom = v2)
-    canvas = ROOT.TCanvas(name, name, 1200, 1100)  
-    canvas.Divide(2, 2)  # Small spacing between top and bottom
-
-    frames = []
-    for i in range(4):
-        canvas.cd(i + 1)
-        pad = ROOT.gPad
-        # Set the correct y-axis range for each pad
-        if i == 0:  # Mass plot (top)
-            frame = pad.DrawFrame(xmins, ymins_mass, xmaxs, ymaxs_mass, axisnametop)
-        elif i == 1:  
-            frame = pad.DrawFrame(0.5, 0, 20.5, 20000, ';Minimum BDT score for prompt #Lambda_{c}^{+}; raw yield')
-        elif i == 2:  # v2 plot (bottom)
-            frame = pad.DrawFrame(xmins, ymins_v2, xmaxs, ymaxs_v2, axisnamebottom)
-        elif i == 3:  # v2 vs Fraction (bottom)
-            frame = pad.DrawFrame(0, 0, 1.05, 0.3, ';Non-prompt fraction; #it{v}_{2}^{obs.}{SP, |#Delta#it{#eta}| > 1.3}')
-        frame.SetTitle("")
-
-        frames.append(frame)
-
-    return canvas, frames
-
 
 def GetLegend(xmin=0.19, ymin=0.62, xmax=0.75, ymax=0.77, textsize=0.04, ncolumns=2, header=' ', fillstyle=0):
     """
@@ -529,17 +524,23 @@ def preprocess(file_path, do_interp=False, do_fit_extend=False, catania=False, s
     return np.concatenate((x_interp, x_extended)), np.concatenate((y_pchip, y_extended))
 
 
-def preprocess_data(data_file_path, get_source_data=False, compine_syst_stat=True, header=9):
+def preprocess_data(data_file_path, get_source_data=False, compine_syst_stat=True, columns=[], header=9):
     '''preprocess the light flavour data, use weighted average to combine the 3040 and 4050 to get the 3050 result for comparation with HF'''
     v2_index = 1
     data_columns = ['PT', 'v2', 'Stat +', 'Stat -', 'Syst +', 'Syst -']
     if header==12:
         data_columns = ['PT', 'v2', 'stat +', 'stat -', 'sys +', 'sys -']
         v2_index = 3
+    if columns:
+        data_columns = columns
     if not isinstance(data_file_path, list):
         data_file_path = list(data_file_path)
     if get_source_data:
         df = read_txt(data_file_path[0], header=header)
+        if compine_syst_stat:
+            df['Total Error'] = np.sqrt(df[data_columns[2]]**2 + df[data_columns[3]]**2)
+            df['PT [GeV/c]'] = df[data_columns[0]]
+            df['v2'] = df[data_columns[1]]
         # print(df)
         return df
     df1 = read_txt(data_file_path[0], header=header)
@@ -555,12 +556,12 @@ def preprocess_data(data_file_path, get_source_data=False, compine_syst_stat=Tru
     columns[0] = 'PT [GeV/c]'
     df_new.columns = columns
     df_new['v2'] = weighted_avg.values
-    if compine_syst_stat:
-        df_new['Total Error'] = np.sqrt(df_new[data_columns[2]]**2 + df_new[data_columns[4]]**2)
+    # if compine_syst_stat:
+    df_new['Total Error'] = np.sqrt(df_new[data_columns[2]]**2 + df_new[data_columns[4]]**2)
     return df_new
 
 
-def preprocess_ncq(data, do_ket_nq=False, do_pt_nq=True, ismodel=False):
+def preprocess_ncq(data, do_ket_nq=False, ismodel=False):
     '''data: dict of {name: df, ...}
         HF is not supprorted here because just one error parameter in df (total)
         return same structure as input
@@ -581,6 +582,7 @@ def preprocess_ncq(data, do_ket_nq=False, do_pt_nq=True, ismodel=False):
                     print('processing d0 model')
                     _, _, _, mass = get_particle_info('Dzero')
                     nq = 2
+                print(mass, nq)
                 for i in range(len(data[key][subkey])):
                     if do_ket_nq:
                         print(f'doing ket/nq for {key}{subkey}')
@@ -615,7 +617,126 @@ def preprocess_ncq(data, do_ket_nq=False, do_pt_nq=True, ismodel=False):
     return data
 
 
-def read_hists(file_path, markerstyle, markersize=1, colors=[], gname=['gV2PromptStat', 'gSystTotPrompt']):
+def preprocess_graph_ncq(particle, graph_list=[], do_ket_nq=False, is_model=False):
+    """
+    Preprocess TGraphAsymmErrors for NCQ studies:
+    - Calculate x-values and x-errors based on bin edges (x-error = half bin width)
+    - Scale x/y values by nq (with optional kEt transformation for x)
+    
+    Parameters:
+        particle (str): Particle type ('lc' or 'd0')
+        graph_list (list): List of TGraphAsymmErrors objects (number of points in each graph must match bin count)
+        do_ket_nq (bool): Whether to first convert x (bin midpoints) to kEt before scaling (else scale pt directly)
+        is_model (bool): Whether the input is model data (for logging purposes)
+    
+    Returns:
+        list: Preprocessed TGraphAsymmErrors objects
+    """
+    new_graph_list = []
+    
+    # 1. Get particle-specific bin edges, mass, and nq
+    if particle == 'd0':
+        bins = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 10, 12, 16, 24]
+        _, _, _, mass = get_particle_info('Dzero')  # Assumes this returns particle mass
+        nq = 2
+    elif particle == 'lc':
+        bins = [2, 3, 4, 5, 6, 8, 12, 24]
+        _, _, _, mass = get_particle_info('LctopKpi')
+        nq = 3
+    else:
+        raise ValueError(f"Unsupported particle type: {particle}. Only 'lc' or 'd0' are allowed.")
+    
+    # Number of bins = number of edges - 1
+    n_bins = len(bins) - 1
+
+    # 2. Process each input graph
+    for graph in graph_list:
+        n_points = graph.GetN()
+        # Validate: number of points must match number of bins
+        if n_points != n_bins:
+            raise ValueError(f"Particle {particle}: Mismatch between graph points ({n_points}) and bins ({n_bins})")
+
+        # Initialize arrays for the new graph
+        x_new = np.zeros(n_points)
+        y_new = np.zeros(n_points)
+        x_err_low = np.zeros(n_points)  # Symmetric x-error (half bin width)
+        x_err_high = np.zeros(n_points)  # Symmetric x-error (half bin width)
+        y_err_low_new = np.zeros(n_points)
+        y_err_high_new = np.zeros(n_points)
+
+        # 3. Process each point (1:1 correspondence with bins)
+        for i in range(n_points):
+            # ---------------------- Process x-values and x-errors (based on bin edges) ----------------------
+            bin_low = bins[i]        # Current bin lower edge
+            bin_high = bins[i + 1]   # Current bin upper edge
+            bin_width = bin_high - bin_low  # Bin width
+            
+            # Calculate bin midpoint (raw x-value)
+            x_mid = (bin_low + bin_high) / 2
+            x_mid = graph.GetX()[i]
+            
+            # Process x based on do_ket_nq flag
+            if do_ket_nq:
+                # First convert to kEt, then scale by nq
+                x_proc = kEt(mass, x_mid)
+                x_proc = nq_scaling(x_proc, nq)
+                # x-error: half the kEt-transformed bin width, scaled by nq
+                ket_low = kEt(mass, bin_low)
+                ket_high = kEt(mass, bin_high)
+                x_err_proc = nq_scaling((ket_high - ket_low) / 2, nq)
+            else:
+                # Directly scale pt (bin midpoint) by nq
+                x_proc = nq_scaling(x_mid, nq)
+                # x-error: half the original bin width, scaled by nq
+                x_err_proc = nq_scaling(bin_width / 2, nq)
+
+            # ---------------------- Process y-values and y-errors (retain original logic) ----------------------
+            # Extract raw y-value and y-errors
+            y = graph.GetY()[i]
+            y_err_low = graph.GetErrorYlow(i)
+            y_err_high = graph.GetErrorYhigh(i)
+            
+            # Scale y and its errors by nq
+            y_proc = nq_scaling(y, nq)
+            y_err_low_proc = nq_scaling(y_err_low, nq)
+            y_err_high_proc = nq_scaling(y_err_high, nq)
+            
+            if do_ket_nq:
+                bin_left = nq_scaling(ket_low, nq)
+                bin_right = nq_scaling(ket_high, nq)
+                x_err_low_proc = x_proc - bin_left    
+                x_err_high_proc = bin_right - x_proc  
+            else:
+                bin_left = nq_scaling(bin_low, nq)
+                bin_right = nq_scaling(bin_high, nq)
+                x_err_low_proc = x_proc - bin_left   
+                x_err_high_proc = bin_right - x_proc  
+
+            # Store processed values
+            x_new[i] = x_proc
+            y_new[i] = y_proc
+            x_err_low[i] = x_err_low_proc  # Symmetric x-error (same for low/high)
+            x_err_high[i] = x_err_high_proc  # Symmetric x-error (same for low/high)
+            y_err_low_new[i] = y_err_low_proc
+            y_err_high_new[i] = y_err_high_proc
+
+        # 4. Create new TGraphAsymmErrors (symmetric x-errors, asymmetric y-errors)
+        new_graph = ROOT.TGraphAsymmErrors(
+            n_points,
+            x_new, y_new,
+            x_err_low, x_err_high,          # x: low and high errors (symmetric)
+            y_err_low_new, y_err_high_new  # y: retain asymmetric errors
+        )
+        new_graph_list.append(new_graph)
+
+    # Log processing info
+    proc_type = "kEt/nq scaling" if do_ket_nq else "pt/nq scaling"
+    data_type = "model" if is_model else "data"
+    print(f"Completed {particle} {data_type} preprocessing ({proc_type}): {len(graph_list)} graphs, {n_bins} bins each")
+    return new_graph_list
+
+
+def read_hists(file_path, markerstyle, markersize=1, colors=[], gname=['gvn_prompt_stat', 'tot_syst']):
     '''
     read the histograms/graph with stat and syst errors from root file
     return [histograms/graph with stat, histograms/graph with syst]
@@ -644,7 +765,7 @@ def read_hists(file_path, markerstyle, markersize=1, colors=[], gname=['gV2Promp
     return [h_prompt_cent, h_prompt_systtot]
 
 
-def get_band(low_x, high_x, low_y, high_y, color, doxlim=False):
+def get_band(low_x, high_x, low_y, high_y, color, doxlim=False, xmin_lim=0.5):
     '''create and fill a band between two graphs'''
     graph_high = ROOT.TGraph(len(high_x), array.array('d', high_x), array.array('d', high_y))
     graph_high.SetLineColor(color)
@@ -654,9 +775,9 @@ def get_band(low_x, high_x, low_y, high_y, color, doxlim=False):
     graph_low.SetLineWidth(0)
 
     # Find intersection of x-axis ranges for both lines
-    x_min = max(min(low_x), min(high_x))
+    x_min = max(min(low_x), min(high_x), xmin_lim)
     x_max = min(max(low_x), max(high_x))
-    x_min=0.5
+    # x_min = xmin_lim
     if doxlim:
         x_max=3.3
     # Create polygon to fill area between lines
@@ -765,21 +886,23 @@ def fill_hist(data, hist='', columns=["PT [GeV/c]", "v2", "Stat +"]):
     hist.SetStats(ROOT.kFALSE)
 
 
-def fill_graph(data, columns=["PT [GeV/c]", "v2", "Total Error"], compine_syst_stat=True):
+def fill_graph(data, columns=["PT [GeV/c]", "v2", "Total Error"], compine_syst_stat=False):
     # print(columns)
     n_points = len(data[columns[0]])
     # graph = ROOT.TGraphErrors(n_points)
     graph = ROOT.TGraphAsymmErrors(n_points)
-    
+    # print(data)
     # Fill graph
     for i in range(n_points):
         x = data[columns[0]][i]
         y = data[columns[1]][i]
-        # yerr = data["Stat +"][i]
-        if compine_syst_stat:
-            yerr = data[columns[2]][i]
+        if compine_syst_stat and len(columns)==4:
+            yerr = data[columns[2]][i]**2 + data[columns[3]][i]**2
+            yerr = np.sqrt(yerr)
+        elif compine_syst_stat and len(columns)!=4:
+            raise ValueError("If combining systematic and statistical errors, must provide both in columns:" + str(columns))
         else:
-            yerr=0
+            yerr = data[columns[2]][i]
         graph.SetPoint(i, x, y)  # Set point (x, y)
         dx=0
         # dx=x/10
@@ -879,11 +1002,13 @@ def get_interp_hist(hists_target, x_max, input_df=[], name='', cent=True):
         if ptmax < x_max:
             if len(input_df)==1:
                 new_hist.SetBinContent(iPt, input_df[0](ptCent))
+                new_hist.SetBinError(iPt, 0)
             elif len(input_df)==2:
                 new_hist.SetBinContent(iPt, np.mean([input_df[0](ptCent), input_df[1](ptCent)]))
+                new_hist.SetBinError(iPt, np.abs(input_df[0](ptCent)-input_df[1](ptCent))/2)
         else:
             new_hist.SetBinContent(iPt, 1e-10)
-        new_hist.SetBinError(iPt, 0)
+        # new_hist.SetBinError(iPt, 0)
     # new_hist =  rebin_safely(new_hist, name, target_bins, fixed_rebin=10)
     return new_hist
 
@@ -1076,11 +1201,12 @@ def merge_asymmetric_errors(graph_stat, graph_syst):
     return merged_graph
 
 
-def model_chi2(data_asymm, h_model, ndf=0):
+@no_print_decorator(forbid_mode="silent")
+def model_chi2_old(data_asymm, h_model, ndf=0):
     ''' caculate chi^2 between model and data'''
     print(h_model.GetName())
     chi2 = 0.0
-    if  not ndf:
+    if not ndf:
         for ibin in range(1,h_model.GetNbinsX()+1):
             if h_model.GetBinContent(ibin) <= 1e-9:
                 h_model.SetBinContent(ibin, 0)
@@ -1114,6 +1240,9 @@ def model_chi2(data_asymm, h_model, ndf=0):
             # Extract model points
             x_model = h_model.GetBinCenter(i+1)
             y_model = h_model.GetBinContent(i+1)
+            y_model_err = h_model.GetBinError(i+1)
+            if y_model_err != 0:
+                print(f"Warning: Non-zero model error at point {i} {x_model}, y_model_err={y_model_err}")
             model_y_vals.append(y_model)
             tolerance = 1e-6
             # Check pt matching
@@ -1137,12 +1266,14 @@ def model_chi2(data_asymm, h_model, ndf=0):
                     ndf -= 1
                     continue
                 sigma = y_err_low
+            sigma = (y_err_high+y_err_low)/2
+            sigma = np.sqrt(sigma**2+y_model_err**2)
             y_errs.append(sigma)
             # Accumulate chi-squared
             chi2 += (residual ** 2) / (sigma **2)
             chi2_list.append((residual ** 2) / (sigma **2))
     # print(x_data)
-    print(f'chi2:{chi2:.2f}; ndf: {ndf}; chi2/ndf: {chi2/ndf:.2f}')
+    print(f'chi2:{chi2:.4f}; ndf: {ndf}; chi2/ndf: {chi2/ndf:.4f}')
     # print('x_vals', list(x_vals)[:ndf])
     print('y_vals', list(y_vals)[:ndf])
     print('sigma', list(y_errs)[:ndf])
@@ -1155,16 +1286,261 @@ def model_chi2(data_asymm, h_model, ndf=0):
     return chi2, ndf, chi2/ndf
 
 
+@no_print_decorator(forbid_mode="silent")
+def model_chi2(data_asymm, h_model, stat_err_data=None, 
+               sys_corr_components=None, sys_uncorr_components=None,
+               rho_sys_uncorr=None, ndf=0):
+    '''
+    Calculate chi-squared between model and data (FINAL FIXED VERSION)
+    - Strict input validation + bug-free dimension handling
+    - Systematic errors split by inter-bin (pₜ) correlation
+    '''
+    print(f"\n=== Chi2 Calculation Start ===")
+    print(f"Model: {h_model.GetName()}")
+    sys_corr_components = sys_corr_components or []
+    sys_uncorr_components = sys_uncorr_components or []
+    print(f"Sys corr components count: {len(sys_corr_components)}")
+    print(f"Sys uncorr components count: {len(sys_uncorr_components)}")
+
+    # ------------------------------
+    # Step 1: Input Validation
+    # ------------------------------
+    use_separate_errors = False
+    if (stat_err_data is not None) and (sys_corr_components or sys_uncorr_components):
+        use_separate_errors = True
+        
+        # Validate component lists
+        if not isinstance(sys_corr_components, list):
+            raise ValueError(f"sys_corr_components must be list (got {type(sys_corr_components)})!")
+        if not isinstance(sys_uncorr_components, list):
+            raise ValueError(f"sys_uncorr_components must be list (got {type(sys_uncorr_components)})!")
+        
+        # Validate no None in components
+        if any(comp is None for comp in sys_corr_components):
+            raise ValueError("sys_corr_components contains None! Check ROOT file extraction.")
+        if any(comp is None for comp in sys_uncorr_components):
+            raise ValueError("sys_uncorr_components contains None! Check ROOT file extraction.")
+        
+        # Correlation matrix validation (CORE FIX)
+        n_uncorr = len(sys_uncorr_components)
+        if n_uncorr > 0:
+            if rho_sys_uncorr is None:
+                rho_sys_uncorr = np.eye(n_uncorr)
+            else:
+                rho_sys_uncorr = np.array(rho_sys_uncorr)
+                # Critical check: ensure matrix shape matches component count
+                if rho_sys_uncorr.shape != (n_uncorr, n_uncorr):
+                    raise ValueError(
+                        f"rho_sys_uncorr shape {rho_sys_uncorr.shape} mismatch! "
+                        f"Expected ({n_uncorr}, {n_uncorr}) for {n_uncorr} components."
+                    )
+                if not np.allclose(rho_sys_uncorr, rho_sys_uncorr.T, atol=1e-6):
+                    raise ValueError("rho_sys_uncorr must be symmetric!")
+                if not np.allclose(np.diag(rho_sys_uncorr), 1.0, atol=1e-6):
+                    raise ValueError("rho_sys_uncorr diagonal must be 1!")
+            print(f"Intra-bin correlation matrix:\n{rho_sys_uncorr}")
+        else:
+            rho_sys_uncorr = None
+
+    # ------------------------------
+    # Step 2: Auto-calculate ndf
+    # ------------------------------
+    if not ndf:
+        ndf = h_model.GetNbinsX()
+        for ibin in range(1, h_model.GetNbinsX() + 1):
+            if h_model.GetBinContent(ibin) <= 1e-9:
+                ndf = ibin - 1
+                break
+        print(f"Auto-calculated ndf: {ndf}")
+
+    # ------------------------------
+    # Step 3: Helper Functions (Fixed)
+    # ------------------------------
+    def extract_y_and_err(data_obj, extract_error=True):
+        """Extract y-values and errors with exact ndf matching"""
+        y_vals = []
+        errors = []
+
+        if hasattr(data_obj, "GetNbinsX"):  # TH1F
+            if data_obj.GetNbinsX() < ndf:
+                raise ValueError(f"TH1F bins ({data_obj.GetNbinsX()}) < ndf ({ndf})!")
+            for ibin in range(1, ndf + 1):
+                y_vals.append(data_obj.GetBinContent(ibin))
+                if extract_error:
+                    errors.append(data_obj.GetBinError(ibin))
+        
+        elif hasattr(data_obj, "GetX"):  # TGraphAsymmErrors
+            if data_obj.GetN() < ndf:
+                raise ValueError(f"TGraph points ({data_obj.GetN()}) < ndf ({ndf})!")
+            for i in range(ndf):
+                y_vals.append(data_obj.GetY()[i])
+                if extract_error:
+                    err_low = data_obj.GetErrorYlow(i)
+                    err_high = data_obj.GetErrorYhigh(i)
+                    errors.append((err_low + err_high) / 2)
+        
+        elif isinstance(data_obj, np.ndarray):
+            if len(data_obj) < ndf:
+                raise ValueError(f"Array length ({len(data_obj)}) < ndf ({ndf})!")
+            y_vals = data_obj[:ndf].tolist()
+            if extract_error:
+                errors = [0.0] * ndf
+        
+        else:
+            raise TypeError(f"Unsupported type: {type(data_obj)}!")
+
+        # Exact length check
+        if len(y_vals) != ndf:
+            raise ValueError(f"Y-values length ({len(y_vals)}) != ndf ({ndf})!")
+        if extract_error and len(errors) != ndf:
+            raise ValueError(f"Errors length ({len(errors)}) != ndf ({ndf})!")
+
+        return y_vals, errors
+
+    def get_x_values(data_obj):
+        """Extract x-values for consistency check"""
+        x_vals = []
+        if hasattr(data_obj, "GetNbinsX"):
+            for ibin in range(1, ndf + 1):
+                x_vals.append(data_obj.GetBinCenter(ibin))
+        elif hasattr(data_obj, "GetX"):
+            for i in range(ndf):
+                x_vals.append(data_obj.GetX()[i])
+        elif isinstance(data_obj, np.ndarray):
+            x_vals = list(range(ndf))
+        return x_vals[:ndf]
+
+    def validate_x_consistency(ref_x, test_obj, obj_name):
+        """Check x-value consistency"""
+        test_x = get_x_values(test_obj)
+        if len(ref_x) != len(test_x):
+            raise ValueError(f"{obj_name} X-count ({len(test_x)}) != ref ({len(ref_x)})!")
+        for i, (x1, x2) in enumerate(zip(ref_x, test_x)):
+            if abs(x1 - x2) > 1e-6:
+                raise ValueError(f"X-mismatch at bin {i}: ref={x1}, {obj_name}={x2}!")
+
+    # ------------------------------
+    # Step 4: Consistency Check
+    # ------------------------------
+    data_x = get_x_values(data_asymm)
+    if use_separate_errors:
+        validate_x_consistency(data_x, stat_err_data, "stat_err_data")
+        for i, comp in enumerate(sys_corr_components):
+            validate_x_consistency(data_x, comp, f"sys_corr_comp_{i}")
+        for i, comp in enumerate(sys_uncorr_components):
+            validate_x_consistency(data_x, comp, f"sys_uncorr_comp_{i}")
+    print(f"Consistency check passed: {len(data_x)} matching bins")
+
+    # ------------------------------
+    # Step 5: Extract Values
+    # ------------------------------
+    # Data values
+    y_data, data_total_errors = extract_y_and_err(data_asymm, extract_error=True)
+    # Model values
+    model_y, model_err = extract_y_and_err(h_model, extract_error=True)
+    # Residuals
+    residuals = np.array(y_data) - np.array(model_y)
+    print(f"Residuals (first 3 bins): {residuals[:3]}")
+
+    # ------------------------------
+    # Step 6: Extract Error Components
+    # ------------------------------
+    exp_stat_err = []
+    sys_corr_err_list = []
+    sys_uncorr_err_list = []
+
+    if use_separate_errors:
+        # Statistical errors
+        _, exp_stat_err = extract_y_and_err(stat_err_data, extract_error=True)
+        # Correlated systematics
+        for comp in sys_corr_components:
+            _, err = extract_y_and_err(comp, extract_error=True)
+            sys_corr_err_list.append(err)
+        # Uncorrelated systematics (CORE FIX: ensure list length matches n_uncorr)
+        for comp in sys_uncorr_components:
+            _, err = extract_y_and_err(comp, extract_error=True)
+            sys_uncorr_err_list.append(err)
+        
+        print(f"Stat errors (first 3): {np.array(exp_stat_err[:3])}")
+        print(f"Reso sys err (first 3): {np.array(sys_corr_err_list[0][:3]) if sys_corr_err_list else []}")
+        print(f"Fit sys err (first 3): {np.array(sys_uncorr_err_list[0][:3]) if sys_uncorr_err_list else []}")
+        print(f"FD sys err (first 3): {np.array(sys_uncorr_err_list[1][:3]) if len(sys_uncorr_err_list)>=2 else []}")
+
+    # ------------------------------
+    # Step 7: Build Covariance Matrix (CORE FIX)
+    # ------------------------------
+    cov_matrix = np.zeros((ndf, ndf))
+
+    if use_separate_errors:
+        # 1. Statistical error (diagonal only)
+        for i in range(ndf):
+            cov_matrix[i, i] += exp_stat_err[i] ** 2
+
+        # 2. Correlated systematics (full matrix)
+        for err_list in sys_corr_err_list:
+            err_arr = np.array(err_list)
+            cov_matrix += np.outer(err_arr, err_arr)
+
+        # 3. Uncorrelated systematics (diagonal only with correlation)
+        n_uncorr = len(sys_uncorr_err_list)
+        if n_uncorr > 0:
+            # Convert to 2D array (n_components x ndf)
+            uncorr_err_arr = np.array(sys_uncorr_err_list)  # Shape: (n_uncorr, ndf)
+            # Calculate per-bin variance with correlation
+            for i_bin in range(ndf):
+                # Get errors for current bin (shape: n_uncorr)
+                bin_err = uncorr_err_arr[:, i_bin]
+                # Calculate variance with correlation (CORE FIX: correct matrix multiplication)
+                bin_var = bin_err.T @ rho_sys_uncorr @ bin_err
+                cov_matrix[i_bin, i_bin] += bin_var
+
+        # 4. Model error (diagonal only)
+        for i in range(ndf):
+            cov_matrix[i, i] += model_err[i] ** 2
+
+    else:
+        # Use total data errors + model errors
+        for i in range(ndf):
+            cov_matrix[i, i] = data_total_errors[i] ** 2 + model_err[i] ** 2
+
+    print(f"Covariance matrix diagonal (first 3): {np.diag(cov_matrix)[:3]}")
+
+    # ------------------------------
+    # Step 8: Chi2 Calculation
+    # ------------------------------
+    # Check for zero variance
+    zero_bins = np.where(np.diag(cov_matrix) < 1e-20)[0]
+    if len(zero_bins) > 0:
+        raise ValueError(f"Zero variance at bins: {zero_bins}! Check error values.")
+
+    # Invert covariance matrix
+    try:
+        cov_inv = np.linalg.inv(cov_matrix)
+        chi2 = residuals.T @ cov_inv @ residuals
+    except np.linalg.LinAlgError as e:
+        raise ValueError(f"Cov matrix inversion failed: {e}!")
+
+    # ------------------------------
+    # Step 9: Final Results
+    # ------------------------------
+    chi2_ndf = chi2 / ndf if ndf > 0 else 0.0
+    print(f"Final Results: chi2={chi2:.4f}, ndf={ndf}, chi2/ndf={chi2_ndf:.4f}")
+    print(f"=== Chi2 Calculation End ===\n")
+
+    return chi2, ndf, chi2_ndf, cov_matrix
+
+
 def compute_ratio_graph(graph_num, graph_den):
     """
     Calculate the ratio of two TGraphAsymmErrors (graph_num / graph_den) and return a TGraphAsymmErrors of the ratio.
+    Now supports non-zero errors in the denominator (asymmetric errors are allowed).
     
     Parameters:
-        graph_num: Numerator TGraphAsymmErrors (contains y-direction errors)
-        graph_den: Denominator TGraphAsymmErrors (assumed to have no errors, only its y-values are used)
+        graph_num: Numerator TGraphAsymmErrors (contains y-direction asymmetric errors)
+        graph_den: Denominator TGraphAsymmErrors (contains y-direction asymmetric errors)
     
     Returns:
-        ratio_graph: TGraphAsymmErrors of the ratio, including propagated errors
+        ratio_graph: TGraphAsymmErrors of the ratio, including propagated asymmetric errors
     """
     # Check input types and convert TH1F to TGraphAsymmErrors if necessary
     if isinstance(graph_num, ROOT.TH1F):
@@ -1179,40 +1555,59 @@ def compute_ratio_graph(graph_num, graph_den):
     if n_points != graph_den.GetN():
         raise ValueError(f"Mismatch in number of points: {n_points} vs {graph_den.GetN()}")
     
-    # Extract x-axis data (access via pointer instead of passing array)
+    # Extract x-axis data (x value + x asymmetric errors)
     x = []
-    x_err_low = []  # x left error
-    x_err_high = [] # x right error
+    x_err_low = []  # x left error (x - x_err_low)
+    x_err_high = [] # x right error (x + x_err_high)
     for i in range(n_points):
-        x.append(graph_num.GetX()[i])  # Directly get i-th x value
+        x.append(graph_num.GetX()[i])
         x_err_low.append(graph_num.GetErrorXlow(i))
         x_err_high.append(graph_num.GetErrorXhigh(i))
     
-    # Extract y-values and errors (numerator and denominator)
-    y_num = [graph_num.GetY()[i] for i in range(n_points)]  # Numerator y-values
-    y_den = [graph_den.GetY()[i] for i in range(n_points)]  # Denominator y-values
-    
-    # Y-direction errors of the numerator (lower and upper errors)
+    # Extract y-values and asymmetric errors for numerator and denominator
+    # Numerator: y_num + (y_num_err_low, y_num_err_high)
+    y_num = [graph_num.GetY()[i] for i in range(n_points)]
     y_num_err_low = [graph_num.GetErrorYlow(i) for i in range(n_points)]
     y_num_err_high = [graph_num.GetErrorYhigh(i) for i in range(n_points)]
     
-    # Calculate ratio and error propagation
+    # Denominator: y_den + (y_den_err_low, y_den_err_high)
+    y_den = [graph_den.GetY()[i] for i in range(n_points)]
+    y_den_err_low = [graph_den.GetErrorYlow(i) for i in range(n_points)]
+    y_den_err_high = [graph_den.GetErrorYhigh(i) for i in range(n_points)]
+    
+    # Calculate ratio and propagated asymmetric errors
     ratio_y = []
-    ratio_err_low = []
-    ratio_err_high = []
+    ratio_err_low = []  # Ratio lower error (R - R_err_low)
+    ratio_err_high = [] # Ratio upper error (R + R_err_high)
+    
     for i in range(n_points):
+        # Avoid division by zero
         if y_den[i] == 0:
             raise ZeroDivisionError(f"Denominator value is zero at point {i}, cannot compute ratio")
         
-        # Ratio = numerator y-value / denominator y-value
-        ratio = y_num[i] / y_den[i]
-        ratio_y.append(ratio)
+        # Step 1: Calculate ratio center value
+        R = y_num[i] / y_den[i]
+        ratio_y.append(R)
         
-        # Error propagation (denominator has no errors, numerator errors scaled proportionally)
-        ratio_err_low.append(y_num_err_low[i] / y_den[i])  # Lower error
-        ratio_err_high.append(y_num_err_high[i] / y_den[i])  # Upper error
+        # Step 2: Error propagation for ratio (asymmetric errors)
+        # (ΔR/R)² = (ΔY_num/Y_num)² + (ΔY_den/Y_den)²
+        
+        rel_err_num_low = y_num_err_low[i] / y_num[i]
+        rel_err_num_high = y_num_err_high[i] / y_num[i]
+        
+        rel_err_den_low = y_den_err_low[i] / y_den[i]  
+        rel_err_den_high = y_den_err_high[i] / y_den[i]
+        
+        rel_err_R_low = np.sqrt(rel_err_num_low**2 + rel_err_den_low**2)
+        rel_err_R_high = np.sqrt(rel_err_num_high**2 + rel_err_den_high**2)
+        
+        R_err_low = R * rel_err_R_low
+        R_err_high = R * rel_err_R_high
+        
+        ratio_err_low.append(R_err_low)
+        ratio_err_high.append(R_err_high)
     
-    # Convert to numpy arrays (required for TGraphAsymmErrors constructor)
+    # Convert to numpy arrays (compatible with ROOT.TGraphAsymmErrors constructor)
     x_np = np.array(x, dtype=float)
     ratio_y_np = np.array(ratio_y, dtype=float)
     x_err_low_np = np.array(x_err_low, dtype=float)
@@ -1220,16 +1615,15 @@ def compute_ratio_graph(graph_num, graph_den):
     ratio_err_low_np = np.array(ratio_err_low, dtype=float)
     ratio_err_high_np = np.array(ratio_err_high, dtype=float)
     
-    # Create TGraphAsymmErrors for the ratio
+    # Create TGraphAsymmErrors for the ratio (supports asymmetric errors)
     ratio_graph = ROOT.TGraphAsymmErrors(
         n_points,
         x_np, ratio_y_np,
-        x_err_low_np, x_err_high_np,  # x-direction errors
-        ratio_err_low_np, ratio_err_high_np  # y-direction errors
+        x_err_low_np, x_err_high_np,  # x asymmetric errors (inherit from numerator)
+        ratio_err_low_np, ratio_err_high_np  # y asymmetric errors (propagated)
     )
     
     return ratio_graph
-
 
 
 def scale_x_errors(graph, scale_factor=0.8, target_graph='', target_bins=[]):
@@ -1282,12 +1676,14 @@ def scale_x_errors(graph, scale_factor=0.8, target_graph='', target_bins=[]):
 def pdf2eps_imagemagick(pdf_paths, target_format='png'):
     """use ImageMagick convert PDF to PNG / EPS"""
     for pdf in pdf_paths:
-        target_path = os.path.splitext(pdf)[0] + f'.{target_format}'
+        pdf_abs_path = os.path.abspath(pdf)
+        target_path = os.path.splitext(pdf_abs_path)[0] + f'.{target_format}'
+        print(target_path)
         try:
             subprocess.run([
                 'convert', '-trim', 
                 '-density', '300', 
-                pdf, 
+                pdf_abs_path, 
                 target_path
             ], check=True)
         except (subprocess.CalledProcessError, FileNotFoundError):
